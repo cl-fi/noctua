@@ -1,0 +1,21 @@
+import 'dotenv/config';
+export function loadConfig() {
+    const required = (key) => {
+        const val = process.env[key];
+        if (!val)
+            throw new Error(`Missing required env var: ${key}`);
+        return val;
+    };
+    return {
+        suiRpcUrl: process.env.SUI_RPC_URL || 'https://fullnode.mainnet.sui.io:443',
+        privateKey: required('SUI_PRIVATE_KEY'),
+        walrusPublisherUrl: process.env.WALRUS_PUBLISHER_URL || 'https://publisher.walrus-testnet.walrus.space',
+        walrusAggregatorUrl: process.env.WALRUS_AGGREGATOR_URL || 'https://aggregator.walrus-testnet.walrus.space',
+        walrusEpochs: parseInt(process.env.WALRUS_EPOCHS || '5', 10),
+        defaultTriggerHF: parseFloat(process.env.DEFAULT_TRIGGER_HF || '0'),
+        defaultTargetHF: parseFloat(process.env.DEFAULT_TARGET_HF || '0'),
+        telegramBotToken: required('TELEGRAM_BOT_TOKEN'),
+        geminiApiKey: required('GEMINI_API_KEY'),
+    };
+}
+//# sourceMappingURL=config.js.map
