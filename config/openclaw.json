@@ -1,0 +1,16 @@
+{
+  "workspace": "./workspace",
+  "heartbeat": {
+    "enabled": true,
+    "interval_minutes": 5
+  },
+  "exec": {
+    "enabled": true,
+    "allowed_commands": [
+      "node dist/cli.js *",
+      "pkill -f noctua-daemon",
+      "ps aux | grep noctua"
+    ]
+  },
+  "skills_dir": "./workspace/skills"
+}
