@@ -83,39 +83,26 @@ Without Noctua, the user would need to manually monitor, prepare USDC, and execu
 ## Quick Start
 
 ```bash
-# Install globally from GitHub
-npm i -g github:cl-fi/noctua
+# 1. Clone and install
+git clone https://github.com/your-repo/noctua.git
+cd noctua
+npm install
 
-# Or run directly without installing
-npx github:cl-fi/noctua --help
-```
-
-### Setup
-
-```bash
-# 1. Create a working directory
-mkdir my-noctua && cd my-noctua
-
-# 2. Create .env with your keys (see .env.example for all options)
-#   SUI_PRIVATE_KEY     - your Sui wallet private key
+# 2. Configure
+cp .env.example .env
+# Edit .env:
+#   SUI_PRIVATE_KEY     - your Sui private key
 #   TELEGRAM_BOT_TOKEN  - from @BotFather
-#   GEMINI_API_KEY      - from Google AI Studio
+#   GEMINI_API_KEY      - from Google AI Studio (or swap for your preferred LLM)
 
-# 3. Start — HF thresholds auto-calibrated by LLM + market data
-noctua start
+# 3. Build
+npm run build
+
+# 4. Start — HF thresholds auto-calibrated by LLM + market data
+node dist/cli.js start
 
 # Or manually set thresholds (skips auto-calibration)
-noctua start --trigger 1.5 --target 2.0
-```
-
-### From Source
-
-```bash
-git clone https://github.com/cl-fi/noctua.git
-cd noctua
-npm install && npm run build
-cp .env.example .env  # edit with your keys
-node dist/cli.js start
+node dist/cli.js start --trigger 1.5 --target 2.0
 ```
 
 ## Telegram Commands
