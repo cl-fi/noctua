@@ -6,6 +6,7 @@
  *
  * Uses navi-sdk exclusively to avoid ESM/CJS dual-package issues with @mysten/sui.
  */
+import { createRequire } from 'module';
 import {
   flashloan,
   repayFlashLoan,
@@ -17,6 +18,8 @@ import {
   swapPTB,
 } from 'navi-sdk';
 import type { PoolConfig, CoinInfo } from 'navi-sdk';
+
+const require = createRequire(import.meta.url);
 
 export interface FlashloanUnwindParams {
   client: any;      // SuiClient from navi-sdk's CJS context
@@ -69,21 +72,53 @@ export async function atomicFlashloanUnwind(params: FlashloanUnwindParams): Prom
     const tx = new Transaction();
     tx.setSender(userAddress);
 
-    // Step 0: Update oracle prices for accurate HF calculation
-    await updateOraclePTB(client, tx);
+    // Step 0: Update oracle prices — bypass broken Pyth check, call updateSinglePrice directly
+    try {
+      const { PriceFeedConfig, OracleProConfig } = require('navi-sdk/dist/address');
+      const updateSinglePrice = (txb: any, input: any) => {
+        txb.moveCall({
+          target: `${OracleProConfig.PackageId}::oracle_pro::update_single_price_v2`,
+          arguments: [
+            txb.object('0x6'),
+            txb.object(OracleProConfig.OracleConfig),
+            txb.object(OracleProConfig.PriceOracle),
+            txb.object(OracleProConfig.SupraOracleHolder),
+            txb.object(input.pythPriceInfoObject),
+            txb.object('0x1fa7566f40f93cdbafd5a029a231e06664219444debb59beec2fe3f19ca08b7e'),
+            txb.pure.address(input.feedId),
+          ],
+        });
+      };
+      // Update prices for all known tokens
+      for (const key of Object.keys(PriceFeedConfig)) {
+        if (PriceFeedConfig[key]?.pythPriceInfoObject) {
+          updateSinglePrice(tx, PriceFeedConfig[key]);
+        }
+      }
+      console.log(`✅ Oracle prices updated for ${Object.keys(PriceFeedConfig).length} tokens`);
+    } catch (err: any) {
+      console.warn(`⚠️ Oracle update failed: ${err.message}`);
+    }
 
     // Step 1: Flash loan the debt token amount from NAVI
     const flashloanAmount = Math.ceil(debtAmountToRepay * (10 ** debtCoin.decimal));
     const [flashBalance, flashReceipt] = await flashloan(tx, debtPool, flashloanAmount);
 
-    // Step 2: Repay the user's debt with flash-loaned tokens
-    await repayDebt(tx, debtPool, flashBalance, flashloanAmount);
+    // Step 2: Convert flash loan Balance → Coin for repayDebt
+    const [flashCoin] = tx.moveCall({
+      target: '0x2::coin::from_balance',
+      arguments: [flashBalance],
+      typeArguments: [debtPool.type],
+    });
 
-    // Step 3: Withdraw freed collateral
+    // Step 3: Repay the user's debt with flash-loaned tokens
+    await repayDebt(tx, debtPool, flashCoin, flashloanAmount);
+
+    // Step 4: Withdraw freed collateral
     const withdrawAmount = Math.ceil(collateralToWithdraw * (10 ** collateralCoin.decimal));
     const [withdrawnCoin] = await withdrawCoin(tx, collateralPool, withdrawAmount);
 
-    // Step 4: Swap collateral → debt token via NAVI aggregator
+    // Step 5: Swap collateral → debt token via NAVI aggregator
     // Add 0.5% buffer for flash loan fee (0.06% current + slippage)
     const flashloanRepayAmount = Math.ceil(flashloanAmount * 1.005);
     const swappedCoin = await swapPTB(
@@ -96,11 +131,36 @@ export async function atomicFlashloanUnwind(params: FlashloanUnwindParams): Prom
       flashloanRepayAmount,
     );
 
-    // Step 5: Repay the flash loan
-    await repayFlashLoan(tx, debtPool, flashReceipt, swappedCoin);
+    // Step 6: Convert swapped Coin → Balance for flash loan repayment
+    const [repayBalance] = tx.moveCall({
+      target: '0x2::coin::into_balance',
+      arguments: [swappedCoin],
+      typeArguments: [debtPool.type],
+    });
 
-    // Execute the atomic transaction
-    const result = await SignAndSubmitTXB(tx, client, keypair);
+    // Step 7: Repay the flash loan — returns leftover balance that must be consumed
+    const [leftoverBalance] = await repayFlashLoan(tx, debtPool, flashReceipt, repayBalance);
+
+    // Step 8: Convert any leftover balance to coin and transfer to user (Move requires all values consumed)
+    const [leftoverCoin] = tx.moveCall({
+      target: '0x2::coin::from_balance',
+      arguments: [leftoverBalance],
+      typeArguments: [debtPool.type],
+    });
+    tx.transferObjects([leftoverCoin], userAddress);
+
+    // Execute the atomic transaction (with retry for transient network failures)
+    let result: any;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        result = await SignAndSubmitTXB(tx, client, keypair);
+        break;
+      } catch (submitErr: any) {
+        if (attempt === 2) throw submitErr;
+        console.log(`⚠️ TX submit attempt ${attempt + 1} failed: ${submitErr.message}, retrying in 3s...`);
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
 
     const gasUsed = result.effects?.gasUsed
       ? (

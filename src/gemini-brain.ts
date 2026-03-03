@@ -1,9 +1,10 @@
 import { GoogleGenAI, type Chat, type FunctionCall, type Content } from '@google/genai';
-import type { NoctuaConfig, ProtectionRule, AnalysisDecision } from './types.js';
+import type { NoctuaConfig, ProtectionRule, AnalysisDecision, PositionSnapshot } from './types.js';
+import type { VolatilityReport } from './price-volatility.js';
 import { NOCTUA_TOOLS, ToolHandler } from './tools.js';
 
-const MONITOR_MODEL = 'gemini-2.0-flash';
-const CHAT_MODEL = 'gemini-2.0-flash';
+const MONITOR_MODEL = 'gemini-3-flash-preview';
+const CHAT_MODEL = 'gemini-3-flash-preview';
 
 const SYSTEM_PROMPT = `You are Noctua 🦉, an autonomous DeFi guardian AI that protects NAVI Protocol lending positions on Sui blockchain.
 
@@ -29,7 +30,7 @@ Rules:
 - shouldAct=true ONLY if HF is at or below the trigger threshold
 - shouldWarn=true if HF is declining rapidly (compare history) or within 20% of trigger
 - shouldWarn=false if HF is stable and far from trigger (avoid unnecessary alerts)
-- reasoning should be 1-2 sentences in Chinese
+- reasoning should be 1-2 sentences in English
 - If HF history shows rapid decline (dropping >0.1 in recent checks), warn even if above trigger
 - If HF is stable or rising, no warning needed`;
 
@@ -66,15 +67,20 @@ Position data:
         model: MONITOR_MODEL,
         contents: prompt,
         config: {
-          temperature: 0.1,  // Low temperature for consistent analysis
-          maxOutputTokens: 256,
+          temperature: 0.1,
+          maxOutputTokens: 1024,
+          thinkingConfig: { thinkingBudget: 0 },
         },
       });
 
       const text = response.text?.trim() || '';
-      // Parse JSON from response (handle potential markdown wrapping)
-      const jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const decision = JSON.parse(jsonStr) as AnalysisDecision;
+      console.log(`[Gemini raw] ${text.slice(0, 300)}`);
+      // Extract JSON from response — handle markdown wrapping, thinking tags, etc.
+      const jsonMatch = text.match(/\{[\s\S]*?"shouldAct"[\s\S]*?\}/);
+      if (!jsonMatch) {
+        throw new Error('No valid JSON found in Gemini response');
+      }
+      const decision = JSON.parse(jsonMatch[0]) as AnalysisDecision;
 
       return {
         shouldAct: decision.shouldAct ?? false,
@@ -87,7 +93,7 @@ Position data:
       return {
         shouldAct: data.hf <= data.rule.triggerHF && data.hf > 0,
         shouldWarn: data.hf <= data.rule.triggerHF * 1.2 && data.hf > data.rule.triggerHF,
-        reasoning: `Gemini 分析失败，使用阈值兜底。当前 HF: ${data.hf.toFixed(4)}`,
+        reasoning: `Gemini analysis failed, using threshold fallback. Current HF: ${data.hf.toFixed(4)}`,
       };
     }
   }
@@ -143,6 +149,76 @@ Position data:
       // Reset session on error
       this.chatSessions.delete(chatId);
       return `Sorry, I encountered an error: ${err.message}`;
+    }
+  }
+
+  /**
+   * Auto-calibrate trigger/target HF based on market volatility + position data.
+   * Called at startup (if no manual HF set) and every 24h.
+   */
+  async calibrateHF(volatility: VolatilityReport, position: PositionSnapshot): Promise<{
+    triggerHF: number;
+    targetHF: number;
+    reasoning: string;
+  }> {
+    const prompt = `You are a DeFi risk calibration engine. Based on the market volatility data and user's current position, recommend optimal Health Factor thresholds.
+
+Return ONLY a JSON object (no markdown, no extra text):
+{"triggerHF": number, "targetHF": number, "reasoning": "brief explanation in English"}
+
+Constraints:
+- triggerHF must be between 1.2 and 2.0
+- targetHF must be between triggerHF + 0.3 and triggerHF + 1.0
+- Higher volatility → higher triggerHF (more conservative, act earlier)
+- Lower volatility → lower triggerHF (less unnecessary unwinds)
+- Consider max drawdown: if 24h drawdown > 10%, be very conservative
+- Consider current HF: if already low, recommend higher trigger
+
+Market Data:
+${volatility.klineSummary}
+
+Position Data:
+- Current Health Factor: ${position.healthFactor.toFixed(4)}
+- Total Collateral: $${position.totalCollateralUsd.toFixed(2)}
+- Total Debt: $${position.totalDebtUsd.toFixed(2)}
+- Collaterals: ${position.collaterals.map(c => `${c.symbol}: ${c.amount.toFixed(4)} ($${c.valueUsd.toFixed(2)})`).join(', ')}
+- Debts: ${position.debts.map(d => `${d.symbol}: ${d.amount.toFixed(4)} ($${d.valueUsd.toFixed(2)})`).join(', ')}`;
+
+    try {
+      const response = await this.ai.models.generateContent({
+        model: MONITOR_MODEL,
+        contents: prompt,
+        config: {
+          temperature: 0.2,
+          maxOutputTokens: 512,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      });
+
+      const text = response.text?.trim() || '';
+      console.log(`[Calibrate raw] ${text.slice(0, 300)}`);
+
+      const jsonMatch = text.match(/\{[\s\S]*?"triggerHF"[\s\S]*?\}/);
+      if (!jsonMatch) throw new Error('No valid JSON in calibration response');
+
+      const result = JSON.parse(jsonMatch[0]);
+      const triggerHF = Math.max(1.2, Math.min(2.0, result.triggerHF));
+      const targetHF = Math.max(triggerHF + 0.3, Math.min(triggerHF + 1.0, result.targetHF));
+
+      return {
+        triggerHF: Math.round(triggerHF * 100) / 100,
+        targetHF: Math.round(targetHF * 100) / 100,
+        reasoning: result.reasoning || 'Auto-calibrated based on market volatility',
+      };
+    } catch (err: any) {
+      console.error(`[Calibrate] LLM calibration failed: ${err.message}`);
+      // Fallback: conservative defaults based on volatility
+      const trigger = volatility.maxDrawdown24h > 10 ? 1.8 : volatility.maxDrawdown24h > 5 ? 1.5 : 1.3;
+      return {
+        triggerHF: trigger,
+        targetHF: trigger + 0.5,
+        reasoning: `LLM calibration failed, using conservative defaults based on 24h max drawdown (${volatility.maxDrawdown24h.toFixed(1)}%)`,
+      };
     }
   }
 }

@@ -47,8 +47,8 @@ program
     }
 
     const rule: ProtectionRule = {
-      triggerHF: opts.trigger || config.defaultTriggerHF,
-      targetHF: opts.target || config.defaultTargetHF,
+      triggerHF: opts.trigger ?? config.defaultTriggerHF,
+      targetHF: opts.target ?? config.defaultTargetHF,
       strategy: (opts.strategy as Strategy) || 'collateral_swap',
       paused: false,
     };

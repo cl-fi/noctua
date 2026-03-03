@@ -95,25 +95,34 @@ export class ToolHandler {
   async handle(name: string, args: Record<string, any>): Promise<string> {
     switch (name) {
       case 'get_position': {
-        const snapshot = await this.naviClient.getPosition();
-        return JSON.stringify({
-          healthFactor: snapshot.healthFactor,
-          totalCollateralUsd: snapshot.totalCollateralUsd,
-          totalDebtUsd: snapshot.totalDebtUsd,
-          collaterals: snapshot.collaterals.map(c => ({
-            symbol: c.symbol, amount: c.amount, valueUsd: c.valueUsd,
-          })),
-          debts: snapshot.debts.map(d => ({
-            symbol: d.symbol, amount: d.amount, valueUsd: d.valueUsd,
-          })),
-        }, null, 2);
+        try {
+          const snapshot = await this.naviClient.getPosition();
+          return JSON.stringify({
+            healthFactor: snapshot.healthFactor,
+            totalCollateralUsd: snapshot.totalCollateralUsd,
+            totalDebtUsd: snapshot.totalDebtUsd,
+            collaterals: snapshot.collaterals.map(c => ({
+              symbol: c.symbol, amount: c.amount, valueUsd: c.valueUsd,
+            })),
+            debts: snapshot.debts.map(d => ({
+              symbol: d.symbol, amount: d.amount, valueUsd: d.valueUsd,
+            })),
+          }, null, 2);
+        } catch (err: any) {
+          return JSON.stringify({ error: true, message: `Failed to fetch position from NAVI: ${err.message}. Do NOT make up data — tell the user the request failed and to try again later.` });
+        }
       }
 
       case 'execute_unwind': {
         if (!args.confirm) {
           return 'Unwind NOT executed — confirm must be true. This is a safety check.';
         }
-        const snapshot = await this.naviClient.getPosition();
+        let snapshot;
+        try {
+          snapshot = await this.naviClient.getPosition();
+        } catch (err: any) {
+          return JSON.stringify({ error: true, message: `Cannot execute unwind — failed to fetch position: ${err.message}` });
+        }
         const state = this.getState();
         try {
           const trace = await this.unwindEngine.execute(snapshot, state.rule);

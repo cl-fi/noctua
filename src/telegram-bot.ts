@@ -169,7 +169,12 @@ export class NoctuaTelegramBot {
       try {
         await ctx.replyWithChatAction('typing');
         const reply = await this.onMessage(chatId, ctx.message.text);
-        await ctx.reply(reply, { parse_mode: 'Markdown' });
+        // Try Markdown first, fallback to plain text if Telegram can't parse it
+        try {
+          await ctx.reply(reply, { parse_mode: 'Markdown' });
+        } catch {
+          await ctx.reply(reply);
+        }
       } catch (err: any) {
         await ctx.reply(`Error: ${err.message}`);
       }
@@ -181,8 +186,12 @@ export class NoctuaTelegramBot {
     for (const chatId of this.chatIds) {
       try {
         await this.bot.api.sendMessage(chatId, message, { parse_mode: parseMode });
-      } catch (err: any) {
-        console.error(`Failed to send to chat ${chatId}: ${err.message}`);
+      } catch {
+        try {
+          await this.bot.api.sendMessage(chatId, message);
+        } catch (err: any) {
+          console.error(`Failed to send to chat ${chatId}: ${err.message}`);
+        }
       }
     }
     // Always also log to console as fallback

@@ -17,6 +17,23 @@ for (const [key, poolConfig] of Object.entries(pool)) {
   }
 }
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 3000): Promise<T> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === retries) throw err;
+      console.log(`[Retry] attempt ${i + 1} failed, retrying in ${delayMs / 1000}s...`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw new Error('unreachable');
+}
+
+// Price cache — getPoolsInfo data rarely changes, avoid hammering the API
+let priceCache: { data: Record<number, { price: number; decimal: number }>; ts: number } | null = null;
+const PRICE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 export class NaviClient {
   private sdk: NAVISDKClient;
   private account: AccountManager;
@@ -46,18 +63,53 @@ export class NaviClient {
 
   async getPosition(address?: string): Promise<PositionSnapshot> {
     const addr = address || this.address;
-    const portfolio = await this.account.getNAVIPortfolio(addr, false);
-    const hf = await this.account.getHealthFactor(addr);
 
-    // Fetch pool data for price info
-    const poolsData = await getPoolsInfo();
-    const priceMap: Record<number, { price: number; decimal: number }> = {};
-    if (poolsData) {
-      for (const p of poolsData) {
-        priceMap[p.id] = {
-          price: p.oracle ? parseFloat(p.oracle.price) : 0,
-          decimal: p.oracle ? p.oracle.decimal : 9,
-        };
+    // Parallel fetch: portfolio + HF + prices (if cache expired)
+    const needPriceRefresh = !priceCache || (Date.now() - priceCache.ts > PRICE_CACHE_TTL);
+    const [portfolio, hf] = await Promise.all([
+      withRetry(() => this.account.getNAVIPortfolio(addr, false)),
+      withRetry(() => this.account.getHealthFactor(addr)),
+    ]);
+
+    // Use cached prices or fetch fresh
+    let priceMap: Record<number, { price: number; decimal: number }> = {};
+    if (priceCache && !needPriceRefresh) {
+      priceMap = priceCache.data;
+    } else {
+      try {
+        const poolsData = await getPoolsInfo();
+        if (poolsData) {
+          for (const p of poolsData) {
+            const price = p.oracle ? parseFloat(p.oracle.price) : 0;
+            priceMap[p.id] = { price, decimal: p.oracle ? p.oracle.decimal : 9 };
+          }
+        }
+        priceCache = { data: priceMap, ts: Date.now() };
+        console.log(`[Price] loaded ${Object.keys(priceMap).length} pools (fresh)`);
+      } catch (err: any) {
+        console.error(`getPoolsInfo failed: ${err.message}, trying fetchCoinPrices...`);
+        try {
+          const coinTypes = Object.values(KNOWN_COINS).map(c => c.address);
+          const prices = await fetchCoinPrices(coinTypes);
+          if (prices) {
+            for (const [sym, poolConfig] of Object.entries(pool)) {
+              const coin = KNOWN_COINS[sym];
+              if (!coin) continue;
+              const priceEntry = prices.find((p: any) => p.coinType === coin.address);
+              if (priceEntry) {
+                priceMap[poolConfig.assetId] = { price: priceEntry.value, decimal: coin.decimal };
+              }
+            }
+          }
+          priceCache = { data: priceMap, ts: Date.now() };
+        } catch (err2: any) {
+          console.error(`fetchCoinPrices also failed: ${err2.message}`);
+          // Use stale cache if available
+          if (priceCache) {
+            priceMap = priceCache.data;
+            console.log(`[Price] using stale cache`);
+          }
+        }
       }
     }
 
@@ -65,8 +117,8 @@ export class NaviClient {
     const debts: AssetPosition[] = [];
 
     for (const [key, balances] of portfolio) {
-      // Find matching pool
-      const poolEntry = Object.entries(pool).find(([_, pc]) => pc.name === key);
+      // Portfolio keys are symbols (e.g. "Sui", "nUSDC") — match against pool object keys
+      const poolEntry = Object.entries(pool).find(([sym]) => sym === key);
       if (!poolEntry) continue;
 
       const [symbol, poolConfig] = poolEntry;
@@ -74,23 +126,31 @@ export class NaviClient {
       if (!coin) continue;
 
       const price = priceMap[poolConfig.assetId]?.price || 0;
+      // NAVI internally stores all balances with 1e9 precision regardless of coin decimal
+      const NAVI_INTERNAL_DECIMALS = 1e9;
+
+      if (balances.supplyBalance > 0 || balances.borrowBalance > 0) {
+        console.log(`[Position] ${symbol}: supply=${(balances.supplyBalance / NAVI_INTERNAL_DECIMALS).toFixed(6)}, borrow=${(balances.borrowBalance / NAVI_INTERNAL_DECIMALS).toFixed(6)}, price=$${price}`);
+      }
 
       if (balances.supplyBalance > 0) {
+        const amount = balances.supplyBalance / NAVI_INTERNAL_DECIMALS;
         collaterals.push({
           coinType: coin.address,
           symbol,
-          amount: balances.supplyBalance,
-          valueUsd: balances.supplyBalance * price,
+          amount,
+          valueUsd: amount * price,
           decimal: coin.decimal,
         });
       }
 
       if (balances.borrowBalance > 0) {
+        const amount = balances.borrowBalance / NAVI_INTERNAL_DECIMALS;
         debts.push({
           coinType: coin.address,
           symbol,
-          amount: balances.borrowBalance,
-          valueUsd: balances.borrowBalance * price,
+          amount,
+          valueUsd: amount * price,
           decimal: coin.decimal,
         });
       }

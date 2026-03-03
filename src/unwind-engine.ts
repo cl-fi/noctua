@@ -72,12 +72,25 @@ export class UnwindEngine {
     const numerator = snapshot.totalCollateralUsd * avgLTV - targetHF * snapshot.totalDebtUsd;
     const denominator = fee * avgLTV - targetHF;
 
-    if (denominator <= 0) {
-      // Can't reach target HF with this approach — need full exit
-      throw new Error(`Cannot reach target HF ${targetHF}. Consider full exit strategy.`);
-    }
+    let debtRepayUsd: number;
+    const rawRepay = numerator / denominator;
 
-    const debtRepayUsd = Math.max(0, numerator / denominator);
+    if (denominator === 0) {
+      // Edge case: exactly balanced, repay all
+      console.log(`🦉 Edge case: repaying all debt`);
+      debtRepayUsd = snapshot.totalDebtUsd * 0.98;
+    } else if (rawRepay > 0 && rawRepay <= snapshot.totalDebtUsd) {
+      // Normal case: partial repay is sufficient (works for both +/+ and -/- signs)
+      debtRepayUsd = rawRepay;
+    } else if (rawRepay > snapshot.totalDebtUsd) {
+      // Need more than total debt — cap at 98% full repay
+      console.log(`🦉 Partial unwind insufficient, executing full debt repayment`);
+      debtRepayUsd = snapshot.totalDebtUsd * 0.98;
+    } else {
+      // Negative result means position is already above target
+      console.log(`🦉 Position already safe, no repayment needed`);
+      debtRepayUsd = 0;
+    }
 
     // Convert USD to token amounts
     const debtPrice = primaryDebt.valueUsd / primaryDebt.amount;
@@ -121,9 +134,10 @@ export class UnwindEngine {
       collateralToWithdraw,
     });
 
-    // Get restored HF
+    // Get restored HF (wait for RPC to reflect the new state)
     let restoredHF = 0;
     if (result.success) {
+      await new Promise(r => setTimeout(r, 3000));
       try {
         restoredHF = await this.naviClient.getHealthFactor();
       } catch {

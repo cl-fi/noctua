@@ -15,8 +15,8 @@ export function loadConfig(): NoctuaConfig {
     walrusPublisherUrl: process.env.WALRUS_PUBLISHER_URL || 'https://publisher.walrus-testnet.walrus.space',
     walrusAggregatorUrl: process.env.WALRUS_AGGREGATOR_URL || 'https://aggregator.walrus-testnet.walrus.space',
     walrusEpochs: parseInt(process.env.WALRUS_EPOCHS || '5', 10),
-    defaultTriggerHF: parseFloat(process.env.DEFAULT_TRIGGER_HF || '1.5'),
-    defaultTargetHF: parseFloat(process.env.DEFAULT_TARGET_HF || '2.0'),
+    defaultTriggerHF: parseFloat(process.env.DEFAULT_TRIGGER_HF || '0'),
+    defaultTargetHF: parseFloat(process.env.DEFAULT_TARGET_HF || '0'),
     telegramBotToken: required('TELEGRAM_BOT_TOKEN'),
     geminiApiKey: required('GEMINI_API_KEY'),
   };

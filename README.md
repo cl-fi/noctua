@@ -2,7 +2,7 @@
 
 > *While you dream, Noctua watches.*
 
-Noctua is an autonomous AI agent built on **OpenClaw** that monitors your **NAVI Protocol** lending positions on **Sui**, uses **Gemini AI** for intelligent risk analysis, and communicates with you via **Telegram** — all running locally with your private key never leaving your device.
+Noctua is an autonomous AI agent built on **OpenClaw** that monitors your **NAVI Protocol** lending positions on **Sui**, uses an **LLM** (e.g. Gemini, GPT, Claude — configurable) for intelligent risk analysis, and communicates with you via **Telegram** — all running locally with your private key never leaving your device.
 
 ## The Problem
 
@@ -10,13 +10,40 @@ DeFi lending positions can be liquidated during market crashes, causing up to 35
 
 ## The Solution
 
-Noctua monitors your Health Factor every 15 seconds, uses **Gemini 3 Flash** to analyze trends and make intelligent decisions, and executes **atomic flash loan unwinds** via a single PTB when danger is detected:
+Noctua monitors your Health Factor continuously, uses an **LLM** to analyze trends and make intelligent decisions, and executes **atomic flash loan unwinds** via a single Sui PTB when danger is detected:
 
 ```
 Flash Loan debt tokens → Repay debt → Withdraw collateral → Swap → Repay flash loan
 ```
 
 All in one atomic transaction. If any step fails, everything reverts. No partial state risk.
+
+### Real-World Example
+
+A user supplies **1 SUI** (~$0.89) as collateral and borrows **0.50 nUSDC** on NAVI Protocol. SUI price drops, and the Health Factor falls to **1.42** — below the configured trigger of 1.5.
+
+Noctua detects this and executes the following **in a single atomic transaction**:
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  User position: 1 SUI collateral, 0.50 nUSDC debt (HF=1.42)  │
+│                                                                │
+│  1. Flash loan 0.24 USDC from NAVI                             │
+│  2. Repay 0.24 nUSDC debt → debt drops to 0.26 nUSDC          │
+│  3. Withdraw 0.27 SUI (now unlocked) from collateral           │
+│  4. Swap 0.27 SUI → 0.24 USDC via Cetus DEX                   │
+│  5. Repay flash loan with swapped USDC                         │
+│  6. Return leftover to user's wallet                           │
+│                                                                │
+│  Result: 0.73 SUI collateral, 0.26 nUSDC debt → HF restored ✅│
+│  Cost: only gas + swap fee (~0.03 SUI)                         │
+│  Time: 1 transaction, ~1 second                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+TX: [`9VqeBU...`](https://suiscan.xyz/mainnet/tx/9VqeBUPdBCjwLD4LxqcP7gdDxoL4djUNxFZKz7k2MLQe) | Audit: [Walrus](https://aggregator.walrus-testnet.walrus.space/v1/blobs/ERhJKNU1lrxXdaZ5utsS1CGFfIJc92aKFnl9VQCVET8)
+
+Without Noctua, the user would need to manually monitor, prepare USDC, and execute multiple transactions — or risk a **35% liquidation penalty**.
 
 ## Architecture
 
@@ -27,13 +54,13 @@ All in one atomic transaction. If any step fails, everything reverts. No partial
 ┌──────────────────────────────────┐
 │       NoctuaTelegramBot          │
 │  /status /history /rule          │
-│  Natural language → Gemini       │
+│  Natural language → LLM          │
 │  Push alerts ← Monitor          │
 └──────────┬───────────────────────┘
            │
            ▼
 ┌──────────────────────────────────┐
-│    Gemini Flash Brain (LLM)      │
+│      LLM Brain (pluggable)       │
 │  Chat: function-calling tools    │
 │  Monitor: structured analysis    │
 │  Trend: HF history analysis      │
@@ -66,12 +93,15 @@ cp .env.example .env
 # Edit .env:
 #   SUI_PRIVATE_KEY     - your Sui private key
 #   TELEGRAM_BOT_TOKEN  - from @BotFather
-#   GEMINI_API_KEY      - from Google AI Studio
+#   GEMINI_API_KEY      - from Google AI Studio (or swap for your preferred LLM)
 
 # 3. Build
 npm run build
 
-# 4. Start (with Telegram bot + monitoring)
+# 4. Start — HF thresholds auto-calibrated by LLM + market data
+node dist/cli.js start
+
+# Or manually set thresholds (skips auto-calibration)
 node dist/cli.js start --trigger 1.5 --target 2.0
 ```
 
@@ -83,7 +113,7 @@ node dist/cli.js start --trigger 1.5 --target 2.0
 | `/status` | Current HF & position breakdown |
 | `/history` | Recent unwind operations + Walrus links |
 | `/rule` | View protection rule |
-| Any text | Natural language chat with Gemini AI |
+| Any text | Natural language chat with LLM |
 
 **Example conversations:**
 - *"Is my position safe?"*
@@ -95,21 +125,24 @@ node dist/cli.js start --trigger 1.5 --target 2.0
 
 | Command | Description |
 |---------|-------------|
-| `noctua start --trigger 1.5 --target 2.0` | Start daemon + Telegram bot |
+| `noctua start` | Start daemon with auto-calibrated HF thresholds |
+| `noctua start --trigger 1.5 --target 2.0` | Start with manual HF thresholds |
 | `noctua stop` | Stop daemon |
 | `noctua status` | Current HF, position, monitoring state |
 | `noctua history` | Recent unwinds with Walrus audit trails |
 | `noctua trace <blobId>` | Read full Walrus audit trace |
 | `noctua set-rule --trigger 1.4` | Update protection rules |
 
-## Gemini AI Brain
+## LLM Brain (Pluggable)
 
-Unlike simple threshold-based bots, Noctua uses **Gemini 3 Flash** for intelligent decision-making:
+Unlike simple threshold-based bots, Noctua uses an **LLM** for intelligent decision-making. The default implementation uses Gemini 3 Flash, but the LLM layer is designed to be swapped for any provider (GPT, Claude, Llama, etc.):
 
+- **Auto-Calibration**: On startup, fetches SUI price volatility (72h Binance K-lines) and uses LLM to recommend optimal trigger/target HF — no manual tuning needed
+- **24h Recalibration**: Automatically re-evaluates thresholds every 24 hours as market conditions change
 - **Trend Analysis**: Tracks HF history (last 20 checks / ~5 min) to detect rapid declines
 - **Smart Warnings**: Warns when HF is dropping fast, even if still above trigger
 - **Natural Language**: Chat with your guardian in plain language via Telegram
-- **Tool Calling**: Gemini can query positions, view history, update rules, and execute unwinds
+- **Tool Calling**: LLM can query positions, view history, update rules, and execute unwinds
 
 ## Sui Stack Integration
 
@@ -134,7 +167,7 @@ Traditional multi-step unwind (withdraw → swap → repay) has a critical flaw:
 - Private keys **never leave your machine**
 - All transactions signed locally
 - Every action logged to Walrus (immutable audit trail)
-- Gemini AI cannot access keys — only calls predefined tools
+- LLM cannot access keys — only calls predefined tools
 - Telegram bot requires `/start` registration
 
 ## Tech Stack
@@ -143,7 +176,7 @@ Traditional multi-step unwind (withdraw → swap → repay) has a critical flaw:
 - navi-sdk (NAVI Protocol SDK + Aggregator)
 - @mysten/sui (Sui TypeScript SDK)
 - grammY (Telegram Bot)
-- @google/genai (Gemini AI with function calling)
+- @google/genai (Gemini AI — default LLM, swappable)
 - OpenClaw (Agent framework)
 - Walrus (Decentralized storage)
 
