@@ -1,6 +1,10 @@
-# 🦉 Noctua — Your DeFi Guardian That Never Sleeps
+<p align="center">
+  <img src="icon.png" width="160" alt="Noctua" />
+</p>
 
-> *While you dream, Noctua watches.*
+<h1 align="center">Noctua — Your DeFi Guardian That Never Sleeps</h1>
+
+<p align="center"><em>While you dream, Noctua watches.</em></p>
 
 Noctua is an autonomous AI agent built on **OpenClaw** that monitors your **NAVI Protocol** lending positions on **Sui**, uses an **LLM** (e.g. Gemini, GPT, Claude — configurable) for intelligent risk analysis, and communicates with you via **Telegram** — all running locally with your private key never leaving your device.
 
