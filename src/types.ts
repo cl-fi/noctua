@@ -6,6 +6,8 @@ export interface NoctuaConfig {
   walrusEpochs: number;
   defaultTriggerHF: number;
   defaultTargetHF: number;
+  telegramBotToken: string;
+  geminiApiKey: string;
 }
 
 export type Strategy = 'collateral_swap' | 'wallet_repay' | 'full_exit';
@@ -52,5 +54,13 @@ export interface DaemonState {
   rule: ProtectionRule;
   lastCheck: number;
   lastHF: number;
+  hfHistory: number[];
   recentTraces: UnwindTrace[];
+  telegramChatIds: number[];
+}
+
+export interface AnalysisDecision {
+  shouldAct: boolean;
+  shouldWarn: boolean;
+  reasoning: string;
 }

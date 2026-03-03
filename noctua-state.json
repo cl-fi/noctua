@@ -1,0 +1,21 @@
+{
+  "running": true,
+  "rule": {
+    "triggerHF": 1.5,
+    "targetHF": 2,
+    "strategy": "collateral_swap",
+    "paused": false
+  },
+  "lastCheck": 1772535764387,
+  "lastHF": 1.157920892373162e+50,
+  "hfHistory": [
+    1.157920892373162e+50,
+    1.157920892373162e+50,
+    1.157920892373162e+50,
+    1.157920892373162e+50,
+    1.157920892373162e+50,
+    1.157920892373162e+50
+  ],
+  "recentTraces": [],
+  "telegramChatIds": []
+}

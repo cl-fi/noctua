@@ -17,5 +17,7 @@ export function loadConfig(): NoctuaConfig {
     walrusEpochs: parseInt(process.env.WALRUS_EPOCHS || '5', 10),
     defaultTriggerHF: parseFloat(process.env.DEFAULT_TRIGGER_HF || '1.5'),
     defaultTargetHF: parseFloat(process.env.DEFAULT_TARGET_HF || '2.0'),
+    telegramBotToken: required('TELEGRAM_BOT_TOKEN'),
+    geminiApiKey: required('GEMINI_API_KEY'),
   };
 }

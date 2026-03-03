@@ -4,18 +4,23 @@ import type { ProtectionRule, DaemonState, UnwindTrace } from './types.js';
 import { NaviClient } from './navi-client.js';
 import { WalrusLogger } from './walrus-logger.js';
 import { UnwindEngine } from './unwind-engine.js';
-import { notifyUnwind, notifyWarning, notifyError, notifyStatus } from './notification.js';
+import { NoctuaTelegramBot } from './telegram-bot.js';
+import { GeminiBrain } from './gemini-brain.js';
+import { ToolHandler } from './tools.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const STATE_FILE = path.join(process.cwd(), 'noctua-state.json');
 const POLL_INTERVAL_MS = 15_000;
+const WALRUS_AGGREGATOR_BASE = 'https://aggregator.walrus-testnet.walrus.space/v1/blobs';
 
 export class NoctuaDaemon {
   private config: NoctuaConfig;
   private naviClient: NaviClient;
   private walrusLogger: WalrusLogger;
   private unwindEngine: UnwindEngine;
+  private telegramBot: NoctuaTelegramBot;
+  private geminiBrain: GeminiBrain;
   private interval: ReturnType<typeof setInterval> | null = null;
   private state: DaemonState;
   private isProcessing = false;
@@ -25,12 +30,37 @@ export class NoctuaDaemon {
     this.naviClient = new NaviClient(config);
     this.walrusLogger = new WalrusLogger(config);
     this.unwindEngine = new UnwindEngine(this.naviClient, this.walrusLogger, config);
+
+    // Telegram Bot
+    this.telegramBot = new NoctuaTelegramBot(config);
+    this.telegramBot.setPositionProvider(() => this.naviClient.getPosition());
+    this.telegramBot.setStateProvider(() => this.getState());
+
+    // Tool handler for Gemini function calling
+    const toolHandler = new ToolHandler(
+      this.naviClient,
+      this.unwindEngine,
+      this.walrusLogger,
+      () => this.getState(),
+      (rule) => this.updateRule(rule),
+    );
+
+    // Gemini Brain
+    this.geminiBrain = new GeminiBrain(config, toolHandler);
+
+    // Route free-text Telegram messages to Gemini
+    this.telegramBot.setMessageHandler(async (chatId, text) => {
+      return this.geminiBrain.chat(chatId, text);
+    });
+
     this.state = {
       running: false,
       rule,
       lastCheck: 0,
       lastHF: 0,
+      hfHistory: [],
       recentTraces: this.loadTraces(),
+      telegramChatIds: this.loadChatIds(),
     };
   }
 
@@ -44,13 +74,26 @@ export class NoctuaDaemon {
     }
   }
 
+  private loadChatIds(): number[] {
+    try {
+      const data = fs.readFileSync(STATE_FILE, 'utf-8');
+      const saved = JSON.parse(data);
+      return saved.telegramChatIds || [];
+    } catch {
+      return [];
+    }
+  }
+
   private saveState() {
+    const chatIds = this.telegramBot.getChatIds();
     fs.writeFileSync(STATE_FILE, JSON.stringify({
       running: this.state.running,
       rule: this.state.rule,
       lastCheck: this.state.lastCheck,
       lastHF: this.state.lastHF,
-      recentTraces: this.state.recentTraces.slice(-20), // keep last 20
+      hfHistory: this.state.hfHistory.slice(-20),
+      recentTraces: this.state.recentTraces.slice(-20),
+      telegramChatIds: chatIds,
     }, null, 2));
   }
 
@@ -64,6 +107,9 @@ export class NoctuaDaemon {
 
     this.state.running = true;
     this.saveState();
+
+    // Start Telegram bot
+    await this.telegramBot.start();
 
     // Run first check immediately
     await this.check();
@@ -79,6 +125,7 @@ export class NoctuaDaemon {
       clearInterval(this.interval);
       this.interval = null;
     }
+    this.telegramBot.stop();
     this.state.running = false;
     this.saveState();
     console.log(`🦉 Noctua stopped. Sweet dreams.`);
@@ -93,28 +140,46 @@ export class NoctuaDaemon {
       this.state.lastHF = hf;
       this.state.lastCheck = Date.now();
 
-      // Warning zone: within 20% of trigger
-      if (hf <= this.state.rule.triggerHF * 1.2 && hf > this.state.rule.triggerHF) {
-        notifyWarning(
-          { healthFactor: hf, collaterals: [], debts: [], totalCollateralUsd: 0, totalDebtUsd: 0, timestamp: Date.now() },
-          this.state.rule.triggerHF
-        );
-      }
+      // Track HF history for trend analysis
+      this.state.hfHistory.push(hf);
+      if (this.state.hfHistory.length > 20) this.state.hfHistory.shift();
 
-      // Trigger zone: HF below threshold
-      if (hf <= this.state.rule.triggerHF && hf > 0) {
-        console.log(`🚨 HF ${hf.toFixed(4)} breached trigger ${this.state.rule.triggerHF}! Executing unwind...`);
+      // Ask Gemini to analyze the position
+      const decision = await this.geminiBrain.analyze({
+        hf,
+        rule: this.state.rule,
+        hfHistory: this.state.hfHistory,
+      });
+
+      if (decision.shouldAct && hf > 0) {
+        console.log(`🚨 Gemini says ACT: ${decision.reasoning}`);
 
         const snapshot = await this.naviClient.getPosition();
         const trace = await this.unwindEngine.execute(snapshot, this.state.rule);
-
         this.state.recentTraces.push(trace);
-        notifyUnwind(trace);
+
+        // Notify via Telegram
+        const msg = [
+          `🦉 *Crisis Averted!*`,
+          ``,
+          `HF: ${trace.triggerHF.toFixed(2)} → ${trace.restoredHF.toFixed(2)}`,
+          `Sold: ${trace.collateralSold.amount} ${trace.collateralSold.symbol}`,
+          `Repaid: ${trace.debtRepaid.amount} ${trace.debtRepaid.symbol}`,
+          `TX: \`${trace.txDigest}\``,
+          trace.walrusBlobId ? `📜 [Walrus Audit](${WALRUS_AGGREGATOR_BASE}/${trace.walrusBlobId})` : '',
+          ``,
+          `💭 _${decision.reasoning}_`,
+        ].filter(Boolean).join('\n');
+
+        await this.telegramBot.broadcast(msg);
+      } else if (decision.shouldWarn) {
+        await this.telegramBot.broadcast(`⚠️ ${decision.reasoning}\n\nHF: ${hf.toFixed(4)} | Trigger: ${this.state.rule.triggerHF}`);
       }
 
       this.saveState();
     } catch (error: any) {
-      notifyError(error.message || String(error));
+      console.error(`Check error: ${error.message}`);
+      await this.telegramBot.broadcast(`❌ Noctua error: ${error.message}`).catch(() => {});
     } finally {
       this.isProcessing = false;
     }

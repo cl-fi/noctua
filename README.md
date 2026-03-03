@@ -2,7 +2,7 @@
 
 > *While you dream, Noctua watches.*
 
-Noctua is an autonomous AI agent built on **OpenClaw** that monitors your **NAVI Protocol** lending positions on **Sui** and automatically unwinds risky positions before liquidation — all running locally with your private key never leaving your device.
+Noctua is an autonomous AI agent built on **OpenClaw** that monitors your **NAVI Protocol** lending positions on **Sui**, uses **Gemini AI** for intelligent risk analysis, and communicates with you via **Telegram** — all running locally with your private key never leaving your device.
 
 ## The Problem
 
@@ -10,7 +10,7 @@ DeFi lending positions can be liquidated during market crashes, causing up to 35
 
 ## The Solution
 
-Noctua monitors your Health Factor every 15 seconds and executes **atomic flash loan unwinds** via a single Programmable Transaction Block (PTB) when danger is detected:
+Noctua monitors your Health Factor every 15 seconds, uses **Gemini 3 Flash** to analyze trends and make intelligent decisions, and executes **atomic flash loan unwinds** via a single PTB when danger is detected:
 
 ```
 Flash Loan debt tokens → Repay debt → Withdraw collateral → Swap → Repay flash loan
@@ -21,30 +21,36 @@ All in one atomic transaction. If any step fails, everything reverts. No partial
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    OpenClaw Gateway                  │
-│         (Telegram / Discord / WhatsApp)              │
-├──────────┬──────────┬───────────────────────────────┤
-│ SOUL.md  │HEARTBEAT │     OpenClaw Skills           │
-│ (Persona)│ (5 min)  │ monitor / protect / history   │
-├──────────┴──────────┴───────────────────────────────┤
-│                  Noctua Daemon                       │
-│  ┌────────────┐  ┌──────────────┐  ┌─────────────┐ │
-│  │  Monitor    │  │ Unwind Engine│  │ Walrus      │ │
-│  │  (15s poll) │→ │ (HF calc +   │→ │ Logger      │ │
-│  │             │  │  strategy)   │  │ (audit)     │ │
-│  └────────────┘  └──────┬───────┘  └─────────────┘ │
-│                         │                           │
-│              ┌──────────▼───────────┐               │
-│              │  Flash Loan Unwind   │               │
-│              │  (Single PTB Atomic) │               │
-│              └──────────┬───────────┘               │
-│                         │                           │
-├─────────────────────────▼───────────────────────────┤
-│                    Sui Blockchain                    │
-│         NAVI Protocol  │  NAVI Aggregator            │
-│         (Lending)      │  (DEX Swap)                 │
-└─────────────────────────────────────────────────────┘
+  Telegram (remote control & alerts)
+       │
+       ▼
+┌──────────────────────────────────┐
+│       NoctuaTelegramBot          │
+│  /status /history /rule          │
+│  Natural language → Gemini       │
+│  Push alerts ← Monitor          │
+└──────────┬───────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────┐
+│    Gemini Flash Brain (LLM)      │
+│  Chat: function-calling tools    │
+│  Monitor: structured analysis    │
+│  Trend: HF history analysis      │
+└──────────┬───────────────────────┘
+           │ tools
+           ▼
+┌──────────────────────────────────┐
+│        Noctua Core               │
+│  NaviClient (position query)     │
+│  UnwindEngine (strategy calc)    │
+│  FlashloanUnwind (atomic PTB)    │
+│  WalrusLogger (audit trail)      │
+└──────────┬───────────────────────┘
+           │
+           ▼
+     Sui Blockchain
+  NAVI + Aggregator + Walrus
 ```
 
 ## Quick Start
@@ -57,44 +63,53 @@ npm install
 
 # 2. Configure
 cp .env.example .env
-# Edit .env with your SUI_PRIVATE_KEY
+# Edit .env:
+#   SUI_PRIVATE_KEY     - your Sui private key
+#   TELEGRAM_BOT_TOKEN  - from @BotFather
+#   GEMINI_API_KEY      - from Google AI Studio
 
 # 3. Build
 npm run build
 
-# 4. Start monitoring
+# 4. Start (with Telegram bot + monitoring)
 node dist/cli.js start --trigger 1.5 --target 2.0
-
-# 5. Check status
-node dist/cli.js status
-
-# 6. View history
-node dist/cli.js history
 ```
+
+## Telegram Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Register for alerts |
+| `/status` | Current HF & position breakdown |
+| `/history` | Recent unwind operations + Walrus links |
+| `/rule` | View protection rule |
+| Any text | Natural language chat with Gemini AI |
+
+**Example conversations:**
+- *"Is my position safe?"*
+- *"What happened last night?"*
+- *"Set trigger to 1.4"*
+- *"Show me the audit trail for the last unwind"*
 
 ## CLI Commands
 
 | Command | Description |
 |---------|-------------|
-| `noctua start --trigger 1.5 --target 2.0` | Start monitoring daemon |
+| `noctua start --trigger 1.5 --target 2.0` | Start daemon + Telegram bot |
 | `noctua stop` | Stop daemon |
-| `noctua status` | Current HF, position breakdown, monitoring state |
-| `noctua history` | Recent unwind operations with Walrus audit trails |
-| `noctua trace <blobId>` | Read full audit trace from Walrus |
-| `noctua set-rule --trigger 1.4 --target 1.8` | Update protection rules |
+| `noctua status` | Current HF, position, monitoring state |
+| `noctua history` | Recent unwinds with Walrus audit trails |
+| `noctua trace <blobId>` | Read full Walrus audit trace |
+| `noctua set-rule --trigger 1.4` | Update protection rules |
 
-## OpenClaw Integration
+## Gemini AI Brain
 
-Noctua runs as an OpenClaw agent with 3 skills:
+Unlike simple threshold-based bots, Noctua uses **Gemini 3 Flash** for intelligent decision-making:
 
-- **noctua-monitor** 🦉 — Start/stop monitoring, check status
-- **noctua-protect** ⚡ — Configure protection rules, manual unwind
-- **noctua-history** 📜 — View past operations, Walrus audit trails
-
-Talk to Noctua naturally via Telegram:
-- *"Protect my NAVI position. Trigger at 1.5, target 2.0"*
-- *"How's my position looking?"*
-- *"Show me what you did last night"*
+- **Trend Analysis**: Tracks HF history (last 20 checks / ~5 min) to detect rapid declines
+- **Smart Warnings**: Warns when HF is dropping fast, even if still above trigger
+- **Natural Language**: Chat with your guardian in plain language via Telegram
+- **Tool Calling**: Gemini can query positions, view history, update rules, and execute unwinds
 
 ## Sui Stack Integration
 
@@ -119,16 +134,18 @@ Traditional multi-step unwind (withdraw → swap → repay) has a critical flaw:
 - Private keys **never leave your machine**
 - All transactions signed locally
 - Every action logged to Walrus (immutable audit trail)
-- OpenClaw skill safety rules prevent unauthorized operations
+- Gemini AI cannot access keys — only calls predefined tools
+- Telegram bot requires `/start` registration
 
 ## Tech Stack
 
 - TypeScript / Node.js
 - navi-sdk (NAVI Protocol SDK + Aggregator)
 - @mysten/sui (Sui TypeScript SDK)
+- grammY (Telegram Bot)
+- @google/genai (Gemini AI with function calling)
 - OpenClaw (Agent framework)
 - Walrus (Decentralized storage)
-- Commander (CLI)
 
 ## License
 
