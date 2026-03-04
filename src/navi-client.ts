@@ -32,7 +32,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 4, delayMs = 5000, l
 }
 
 // Price + LTV cache — pool data rarely changes
-let priceCache: { data: Record<number, { price: number; decimal: number; liquidationThreshold: number }>; ts: number } | null = null;
+let priceCache: { data: Record<number, { price: number; decimal: number }>; ts: number } | null = null;
 const PRICE_CACHE_TTL = 15 * 60 * 1000; // 15 minutes — oracle prices don't change that fast
 
 // Short-term position cache — avoids duplicate fetches (e.g. /status right after poll)
@@ -85,12 +85,18 @@ export class NaviClient {
       activeTokenFilter = null;
     }
 
-    // Fetch portfolio — use token filter if known (reduces 102 RPC calls → ~6)
-    // First call is unfiltered (full discovery), subsequent calls use cached filter
-    const portfolio = await withRetry(
-      () => getAddressPortfolio(addr, false, this.account.client, undefined, activeTokenFilter as any ?? undefined),
-      4, 5000, 'NAVI portfolio fetch'
-    );
+    // Fetch portfolio + HF in parallel
+    // Portfolio uses token filter if known (reduces 102 RPC calls → ~6)
+    const [portfolio, hf] = await Promise.all([
+      withRetry(
+        () => getAddressPortfolio(addr, false, this.account.client, undefined, activeTokenFilter as any ?? undefined),
+        4, 5000, 'NAVI portfolio fetch'
+      ),
+      withRetry(
+        () => this.account.getHealthFactor(addr),
+        4, 5000, 'NAVI health factor fetch'
+      ),
+    ]);
 
     // Update active token filter from non-zero balances
     const tokensWithBalance = [...portfolio.entries()]
@@ -103,7 +109,7 @@ export class NaviClient {
 
     // Use cached pool data or fetch fresh (prices + liquidationThreshold for HF calc)
     const needPriceRefresh = !priceCache || (Date.now() - priceCache.ts > PRICE_CACHE_TTL);
-    let priceMap: Record<number, { price: number; decimal: number; liquidationThreshold: number }> = {};
+    let priceMap: Record<number, { price: number; decimal: number }> = {};
     if (priceCache && !needPriceRefresh) {
       priceMap = priceCache.data;
     } else {
@@ -112,13 +118,7 @@ export class NaviClient {
         if (poolsData) {
           for (const p of poolsData) {
             const price = p.oracle ? parseFloat(p.oracle.price) : 0;
-            // ltv is stored as basis points (e.g. 8000 = 80%)
-            const ltv = p.ltv ? parseInt(p.ltv) / 10000 : 0.8;
-            priceMap[p.id] = {
-              price,
-              decimal: p.oracle ? p.oracle.decimal : 9,
-              liquidationThreshold: ltv,
-            };
+            priceMap[p.id] = { price, decimal: p.oracle ? p.oracle.decimal : 9 };
           }
         }
         priceCache = { data: priceMap, ts: Date.now() };
@@ -134,7 +134,7 @@ export class NaviClient {
               if (!coin) continue;
               const priceEntry = prices.find((p: any) => p.coinType === coin.address);
               if (priceEntry) {
-                priceMap[poolConfig.assetId] = { price: priceEntry.value, decimal: coin.decimal, liquidationThreshold: 0.8 }; // fallback ltv
+                priceMap[poolConfig.assetId] = { price: priceEntry.value, decimal: coin.decimal };
               }
             }
           }
@@ -153,8 +153,6 @@ export class NaviClient {
     const debts: AssetPosition[] = [];
     const NAVI_INTERNAL_DECIMALS = 1e9;
 
-    // Track weighted collateral (for HF computation) and total debt
-    let weightedCollateralUsd = 0;
     let totalDebtUsd = 0;
 
     for (const [key, balances] of portfolio) {
@@ -167,7 +165,6 @@ export class NaviClient {
 
       const poolData = priceMap[poolConfig.assetId];
       const price = poolData?.price || 0;
-      const liquidationThreshold = poolData?.liquidationThreshold ?? 0.8;
 
       if (balances.supplyBalance > 0 || balances.borrowBalance > 0) {
         console.log(`[Position] ${symbol}: supply=${(balances.supplyBalance / NAVI_INTERNAL_DECIMALS).toFixed(6)}, borrow=${(balances.borrowBalance / NAVI_INTERNAL_DECIMALS).toFixed(6)}, price=$${price}`);
@@ -177,7 +174,6 @@ export class NaviClient {
         const amount = balances.supplyBalance / NAVI_INTERNAL_DECIMALS;
         const valueUsd = amount * price;
         collaterals.push({ coinType: coin.address, symbol, amount, valueUsd, decimal: coin.decimal });
-        weightedCollateralUsd += valueUsd * liquidationThreshold;
       }
 
       if (balances.borrowBalance > 0) {
@@ -188,10 +184,7 @@ export class NaviClient {
       }
     }
 
-    // Compute HF locally — no extra API call needed
-    // HF = sum(collateral_usd * liquidationThreshold) / total_debt_usd
     const totalCollateralUsd = collaterals.reduce((sum, c) => sum + c.valueUsd, 0);
-    const hf = totalDebtUsd > 0 ? weightedCollateralUsd / totalDebtUsd : Infinity;
 
     const snapshot: PositionSnapshot = {
       healthFactor: hf,
