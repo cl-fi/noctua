@@ -192,8 +192,6 @@ export class NoctuaTelegramBot {
         }
       }
     }
-    // Always also log to console as fallback
-    console.log(`[TG] ${message.replace(/[*_`]/g, '')}`);
   }
 
   async start() {

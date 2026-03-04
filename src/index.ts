@@ -248,8 +248,6 @@ export class NoctuaDaemon {
             `Repaid: ${trace.debtRepaid.amount} ${trace.debtRepaid.symbol}`,
             `TX: \`${trace.txDigest}\``,
             trace.walrusBlobId ? `📜 [Walrus Audit](${WALRUS_AGGREGATOR_BASE}/${trace.walrusBlobId})` : '',
-            ``,
-            `💭 _${decision.reasoning}_`,
           ].filter(Boolean).join('\n');
 
           await this.telegramBot.broadcast(msg);

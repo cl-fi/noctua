@@ -14,7 +14,7 @@ const program = new Command();
 
 program
   .name('watchdog')
-  .description('🦉 Watchdog — Your DeFi Guardian That Never Sleeps')
+  .description('🐕 Watchdog — Your DeFi Guardian That Never Sleeps')
   .version('1.0.0');
 
 program

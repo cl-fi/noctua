@@ -74,7 +74,6 @@ Position data:
       });
 
       const text = response.text?.trim() || '';
-      console.log(`[Gemini raw] ${text.slice(0, 300)}`);
       // Extract JSON from response — handle markdown wrapping, thinking tags, etc.
       const jsonMatch = text.match(/\{[\s\S]*?"shouldAct"[\s\S]*?\}/);
       if (!jsonMatch) {
