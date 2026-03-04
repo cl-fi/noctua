@@ -146,8 +146,8 @@ export class NoctuaDaemon {
       this.calibrationInterval = setInterval(() => this.recalibrate(), CALIBRATION_INTERVAL_MS);
     }
 
-    // Run first check immediately
-    await this.check();
+    // Run first check immediately — reuse already-fetched position
+    await this.check(position);
 
     console.log(`\n🐕 Monitoring active. Watchdog never sleeps.\n`);
   }
@@ -210,13 +210,12 @@ export class NoctuaDaemon {
     }
   }
 
-  private async check() {
+  private async check(cachedSnapshot?: any) {
     if (this.isProcessing || this.state.rule.paused) return;
     this.isProcessing = true;
 
     try {
-      // Single call to get both HF and position data — avoid duplicate NAVI API calls
-      const snapshot = await this.naviClient.getPosition();
+      const snapshot = cachedSnapshot ?? await this.naviClient.getPosition();
       const hf = snapshot.healthFactor;
       this.state.lastHF = hf;
       this.state.lastCheck = Date.now();
