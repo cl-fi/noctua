@@ -30,9 +30,13 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 4, delayMs = 5000, l
   throw new Error(`${label} failed after ${retries + 1} attempts`);
 }
 
-// Price cache — getPoolsInfo data rarely changes, avoid hammering the API
-let priceCache: { data: Record<number, { price: number; decimal: number }>; ts: number } | null = null;
-const PRICE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// Price + LTV cache — pool data rarely changes
+let priceCache: { data: Record<number, { price: number; decimal: number; liquidationThreshold: number }>; ts: number } | null = null;
+const PRICE_CACHE_TTL = 15 * 60 * 1000; // 15 minutes — oracle prices don't change that fast
+
+// Short-term position cache — avoids duplicate fetches (e.g. /status right after poll)
+let positionCache: { data: PositionSnapshot; ts: number } | null = null;
+const POSITION_CACHE_TTL = 30 * 1000; // 30 seconds
 
 export class NaviClient {
   private sdk: NAVISDKClient;
@@ -64,15 +68,20 @@ export class NaviClient {
   async getPosition(address?: string): Promise<PositionSnapshot> {
     const addr = address || this.address;
 
-    // Parallel fetch: portfolio + HF + prices (if cache expired)
-    const needPriceRefresh = !priceCache || (Date.now() - priceCache.ts > PRICE_CACHE_TTL);
-    const [portfolio, hf] = await Promise.all([
-      withRetry(() => this.account.getNAVIPortfolio(addr, false), 2, 3000, 'NAVI portfolio fetch'),
-      withRetry(() => this.account.getHealthFactor(addr), 2, 3000, 'NAVI health factor fetch'),
-    ]);
+    // Return short-term cache if fresh (avoids duplicate fetches within same poll cycle)
+    if (!address && positionCache && (Date.now() - positionCache.ts < POSITION_CACHE_TTL)) {
+      return positionCache.data;
+    }
 
-    // Use cached prices or fetch fresh
-    let priceMap: Record<number, { price: number; decimal: number }> = {};
+    // Fetch portfolio (single call — HF computed locally from LTV data)
+    const portfolio = await withRetry(
+      () => this.account.getNAVIPortfolio(addr, false),
+      4, 5000, 'NAVI portfolio fetch'
+    );
+
+    // Use cached pool data or fetch fresh (prices + liquidationThreshold for HF calc)
+    const needPriceRefresh = !priceCache || (Date.now() - priceCache.ts > PRICE_CACHE_TTL);
+    let priceMap: Record<number, { price: number; decimal: number; liquidationThreshold: number }> = {};
     if (priceCache && !needPriceRefresh) {
       priceMap = priceCache.data;
     } else {
@@ -81,7 +90,13 @@ export class NaviClient {
         if (poolsData) {
           for (const p of poolsData) {
             const price = p.oracle ? parseFloat(p.oracle.price) : 0;
-            priceMap[p.id] = { price, decimal: p.oracle ? p.oracle.decimal : 9 };
+            // ltv is stored as basis points (e.g. 8000 = 80%)
+            const ltv = p.ltv ? parseInt(p.ltv) / 10000 : 0.8;
+            priceMap[p.id] = {
+              price,
+              decimal: p.oracle ? p.oracle.decimal : 9,
+              liquidationThreshold: ltv,
+            };
           }
         }
         priceCache = { data: priceMap, ts: Date.now() };
@@ -97,14 +112,13 @@ export class NaviClient {
               if (!coin) continue;
               const priceEntry = prices.find((p: any) => p.coinType === coin.address);
               if (priceEntry) {
-                priceMap[poolConfig.assetId] = { price: priceEntry.value, decimal: coin.decimal };
+                priceMap[poolConfig.assetId] = { price: priceEntry.value, decimal: coin.decimal, liquidationThreshold: 0.8 }; // fallback ltv
               }
             }
           }
           priceCache = { data: priceMap, ts: Date.now() };
         } catch (err2: any) {
           console.error(`fetchCoinPrices also failed: ${err2.message}`);
-          // Use stale cache if available
           if (priceCache) {
             priceMap = priceCache.data;
             console.log(`[Price] using stale cache`);
@@ -115,9 +129,13 @@ export class NaviClient {
 
     const collaterals: AssetPosition[] = [];
     const debts: AssetPosition[] = [];
+    const NAVI_INTERNAL_DECIMALS = 1e9;
+
+    // Track weighted collateral (for HF computation) and total debt
+    let weightedCollateralUsd = 0;
+    let totalDebtUsd = 0;
 
     for (const [key, balances] of portfolio) {
-      // Portfolio keys are symbols (e.g. "Sui", "nUSDC") — match against pool object keys
       const poolEntry = Object.entries(pool).find(([sym]) => sym === key);
       if (!poolEntry) continue;
 
@@ -125,9 +143,9 @@ export class NaviClient {
       const coin = KNOWN_COINS[symbol];
       if (!coin) continue;
 
-      const price = priceMap[poolConfig.assetId]?.price || 0;
-      // NAVI internally stores all balances with 1e9 precision regardless of coin decimal
-      const NAVI_INTERNAL_DECIMALS = 1e9;
+      const poolData = priceMap[poolConfig.assetId];
+      const price = poolData?.price || 0;
+      const liquidationThreshold = poolData?.liquidationThreshold ?? 0.8;
 
       if (balances.supplyBalance > 0 || balances.borrowBalance > 0) {
         console.log(`[Position] ${symbol}: supply=${(balances.supplyBalance / NAVI_INTERNAL_DECIMALS).toFixed(6)}, borrow=${(balances.borrowBalance / NAVI_INTERNAL_DECIMALS).toFixed(6)}, price=$${price}`);
@@ -135,35 +153,37 @@ export class NaviClient {
 
       if (balances.supplyBalance > 0) {
         const amount = balances.supplyBalance / NAVI_INTERNAL_DECIMALS;
-        collaterals.push({
-          coinType: coin.address,
-          symbol,
-          amount,
-          valueUsd: amount * price,
-          decimal: coin.decimal,
-        });
+        const valueUsd = amount * price;
+        collaterals.push({ coinType: coin.address, symbol, amount, valueUsd, decimal: coin.decimal });
+        weightedCollateralUsd += valueUsd * liquidationThreshold;
       }
 
       if (balances.borrowBalance > 0) {
         const amount = balances.borrowBalance / NAVI_INTERNAL_DECIMALS;
-        debts.push({
-          coinType: coin.address,
-          symbol,
-          amount,
-          valueUsd: amount * price,
-          decimal: coin.decimal,
-        });
+        const valueUsd = amount * price;
+        debts.push({ coinType: coin.address, symbol, amount, valueUsd, decimal: coin.decimal });
+        totalDebtUsd += valueUsd;
       }
     }
 
-    return {
+    // Compute HF locally — no extra API call needed
+    // HF = sum(collateral_usd * liquidationThreshold) / total_debt_usd
+    const totalCollateralUsd = collaterals.reduce((sum, c) => sum + c.valueUsd, 0);
+    const hf = totalDebtUsd > 0 ? weightedCollateralUsd / totalDebtUsd : Infinity;
+
+    const snapshot: PositionSnapshot = {
       healthFactor: hf,
       collaterals,
       debts,
-      totalCollateralUsd: collaterals.reduce((sum, c) => sum + c.valueUsd, 0),
-      totalDebtUsd: debts.reduce((sum, d) => sum + d.valueUsd, 0),
+      totalCollateralUsd,
+      totalDebtUsd,
       timestamp: Date.now(),
     };
+
+    // Cache for short-term reuse (Telegram /status, consecutive poll cycles)
+    if (!address) positionCache = { data: snapshot, ts: Date.now() };
+
+    return snapshot;
   }
 
   getPoolConfig(symbol: string): PoolConfig | undefined {
