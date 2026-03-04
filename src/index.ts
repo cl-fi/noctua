@@ -107,7 +107,7 @@ export class NoctuaDaemon {
   }
 
   async start() {
-    console.log(`🦉 Noctua starting...`);
+    console.log(`🐕 Watchdog starting...`);
     console.log(`   Address: ${this.naviClient.address}`);
 
     this.state.running = true;
@@ -139,7 +139,7 @@ export class NoctuaDaemon {
       this.calibrationInterval = setInterval(() => this.recalibrate(), CALIBRATION_INTERVAL_MS);
     }
 
-    console.log(`🦉 Monitoring active. Noctua watches while you sleep.`);
+    console.log(`🐕 Monitoring active. Watchdog never sleeps.`);
   }
 
   stop() {
@@ -148,7 +148,7 @@ export class NoctuaDaemon {
     this.telegramBot.stop();
     this.state.running = false;
     this.saveState();
-    console.log(`🦉 Noctua stopped. Sweet dreams.`);
+    console.log(`🐕 Watchdog stopped. Sweet dreams.`);
   }
 
   /**
@@ -261,7 +261,7 @@ export class NoctuaDaemon {
       console.error(`Check error (${this.consecutiveErrors}): ${error.message}`);
       // Only notify after multiple consecutive failures to avoid spam
       if (this.consecutiveErrors === MAX_CONSECUTIVE_ERRORS) {
-        await this.telegramBot.broadcast(`⚠️ Noctua experiencing connectivity issues (${this.consecutiveErrors} failures). Will keep retrying silently.`).catch(() => {});
+        await this.telegramBot.broadcast(`⚠️ Watchdog experiencing connectivity issues (${this.consecutiveErrors} failures). Will keep retrying silently.`).catch(() => {});
       }
     } finally {
       this.isProcessing = false;

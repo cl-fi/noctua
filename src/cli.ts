@@ -13,13 +13,13 @@ import { spawn } from 'child_process';
 const program = new Command();
 
 program
-  .name('noctua')
-  .description('🦉 Noctua — Your DeFi Guardian That Never Sleeps')
+  .name('watchdog')
+  .description('🦉 Watchdog — Your DeFi Guardian That Never Sleeps')
   .version('1.0.0');
 
 program
   .command('start')
-  .description('Start Noctua monitoring daemon')
+  .description('Start Watchdog monitoring daemon')
   .option('-t, --trigger <hf>', 'Health Factor trigger threshold', parseFloat)
   .option('-g, --target <hf>', 'Health Factor target to restore', parseFloat)
   .option('-s, --strategy <strategy>', 'Protection strategy (collateral_swap, wallet_repay, full_exit)')
@@ -42,7 +42,7 @@ program
       const pidFile = path.join(process.cwd(), 'noctua.pid');
       fs.writeFileSync(pidFile, String(child.pid));
 
-      console.log(chalk.green(`🦉 Noctua daemon started (PID: ${child.pid})`));
+      console.log(chalk.green(`🐕 Watchdog daemon started (PID: ${child.pid})`));
       return;
     }
 
@@ -62,16 +62,16 @@ program
 
 program
   .command('stop')
-  .description('Stop Noctua daemon')
+  .description('Stop Watchdog daemon')
   .action(() => {
     const pidFile = path.join(process.cwd(), 'noctua.pid');
     try {
       const pid = parseInt(fs.readFileSync(pidFile, 'utf-8'), 10);
       process.kill(pid, 'SIGTERM');
       fs.unlinkSync(pidFile);
-      console.log(chalk.green(`🦉 Noctua daemon stopped (PID: ${pid})`));
+      console.log(chalk.green(`🐕 Watchdog daemon stopped (PID: ${pid})`));
     } catch {
-      console.log(chalk.yellow('No running Noctua daemon found.'));
+      console.log(chalk.yellow('No running Watchdog daemon found.'));
     }
   });
 
@@ -83,7 +83,7 @@ program
       const config = loadConfig();
       const naviClient = new NaviClient(config);
 
-      console.log(chalk.bold('\n🦉 Noctua Status\n'));
+      console.log(chalk.bold('\n🐕 Watchdog Status\n'));
       console.log(`Address: ${chalk.cyan(naviClient.address)}`);
 
       // Check daemon state
@@ -168,7 +168,7 @@ program
       console.log(chalk.dim('─'.repeat(60)));
       console.log();
     } catch {
-      console.log(chalk.yellow('No state file found. Start Noctua first.'));
+      console.log(chalk.yellow('No state file found. Start Watchdog first.'));
     }
   });
 
@@ -211,7 +211,7 @@ program
       console.log(`  Strategy: ${state.rule.strategy}`);
       console.log(`  Paused: ${state.rule.paused}`);
     } catch {
-      console.log(chalk.yellow('No state file found. Start Noctua first.'));
+      console.log(chalk.yellow('No state file found. Start Watchdog first.'));
     }
   });
 

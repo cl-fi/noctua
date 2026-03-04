@@ -1,11 +1,11 @@
 {
-  "name": "noctua",
+  "name": "watchdog",
   "version": "1.0.0",
-  "description": "Noctua — Your DeFi Guardian That Never Sleeps. Autonomous NAVI position protection on Sui.",
+  "description": "Watchdog — Your DeFi Guardian That Never Sleeps. Autonomous NAVI position protection on Sui.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "noctua": "dist/cli.js"
+    "watchdog": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

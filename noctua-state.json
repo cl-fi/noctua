@@ -1,21 +1,40 @@
 {
-  "running": true,
+  "running": false,
   "rule": {
-    "triggerHF": 1.5,
-    "targetHF": 2,
+    "triggerHF": 1.35,
+    "targetHF": 1.85,
     "strategy": "collateral_swap",
     "paused": false
   },
-  "lastCheck": 1772535764387,
-  "lastHF": 1.157920892373162e+50,
+  "lastCheck": 1772587003561,
+  "lastHF": 2.028246825428307,
   "hfHistory": [
-    1.157920892373162e+50,
-    1.157920892373162e+50,
-    1.157920892373162e+50,
-    1.157920892373162e+50,
-    1.157920892373162e+50,
-    1.157920892373162e+50
+    2.0284653547936635,
+    2.028246825428307
   ],
-  "recentTraces": [],
-  "telegramChatIds": []
+  "recentTraces": [
+    {
+      "triggerHF": 1.4240043411862828,
+      "restoredHF": 1.4240043411862828,
+      "strategy": "collateral_swap",
+      "collateralSold": {
+        "coinType": "0x2::sui::SUI",
+        "symbol": "Sui",
+        "amount": "0.271916"
+      },
+      "debtRepaid": {
+        "coinType": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+        "symbol": "nUSDC",
+        "amount": "0.241525"
+      },
+      "swapRoute": "Sui → nUSDC (NAVI Aggregator)",
+      "txDigest": "9VqeBUPdBCjwLD4LxqcP7gdDxoL4djUNxFZKz7k2MLQe",
+      "gasUsed": "31440768",
+      "timestamp": 1772550925898,
+      "walrusBlobId": "ERhJKNU1lrxXdaZ5utsS1CGFfIJc92aKFnl9VQCVET8"
+    }
+  ],
+  "telegramChatIds": [
+    5321443958
+  ]
 }

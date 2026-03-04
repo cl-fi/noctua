@@ -40,7 +40,7 @@ export class NoctuaTelegramBot {
       this.chatIds.add(chatId);
       this.saveChatIds();
       await ctx.reply(
-        '🦉 *Noctua activated\\!*\n\n' +
+        '🐕 *Watchdog activated\\!*\n\n' +
         'I will monitor your NAVI position and alert you here\\.\n\n' +
         'Commands:\n' +
         '/status \\- Current position & HF\n' +
@@ -62,7 +62,7 @@ export class NoctuaTelegramBot {
         const snapshot = await this.getPositionFn();
 
         const lines = [
-          `🦉 *Noctua Status*`,
+          `🐕 Watchdog Status`,
           ``,
           `Health Factor: *${snapshot.healthFactor.toFixed(4)}*`,
           `Total Collateral: $${snapshot.totalCollateralUsd.toFixed(2)}`,
@@ -89,7 +89,7 @@ export class NoctuaTelegramBot {
           `Strategy: ${state.rule.strategy}`,
         );
 
-        await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' });
+        await ctx.reply(lines.join('\n'));
       } catch (err: any) {
         await ctx.reply(`Error: ${err.message}`);
       }
@@ -103,7 +103,7 @@ export class NoctuaTelegramBot {
       }
 
       const traces = state.recentTraces.slice(-5);
-      const lines = [`🦉 *Recent Unwinds (${traces.length})*\n`];
+      const lines = [`🐕 Recent Unwinds (${traces.length})\n`];
 
       for (const t of traces) {
         lines.push(
@@ -111,15 +111,15 @@ export class NoctuaTelegramBot {
           `HF: ${t.triggerHF.toFixed(2)} → ${t.restoredHF.toFixed(2)}`,
           `Sold: ${t.collateralSold.amount} ${t.collateralSold.symbol}`,
           `Repaid: ${t.debtRepaid.amount} ${t.debtRepaid.symbol}`,
-          `TX: \`${t.txDigest.slice(0, 16)}...\``,
+          `TX: ${t.txDigest.slice(0, 16)}...`,
         );
         if (t.walrusBlobId) {
-          lines.push(`📜 [Walrus Audit](${WALRUS_AGGREGATOR_BASE}/${t.walrusBlobId})`);
+          lines.push(`📜 Walrus: ${WALRUS_AGGREGATOR_BASE}/${t.walrusBlobId}`);
         }
         lines.push(`Time: ${new Date(t.timestamp).toLocaleString()}`);
       }
 
-      await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' });
+      await ctx.reply(lines.join('\n'));
     });
 
     this.bot.command('rule', async (ctx) => {
@@ -129,18 +129,17 @@ export class NoctuaTelegramBot {
         return;
       }
       await ctx.reply(
-        `🦉 *Protection Rule*\n\n` +
+        `🐕 Protection Rule\n\n` +
         `Trigger HF: ${state.rule.triggerHF}\n` +
         `Target HF: ${state.rule.targetHF}\n` +
         `Strategy: ${state.rule.strategy}\n` +
-        `Status: ${state.rule.paused ? '⏸ Paused' : '▶️ Active'}`,
-        { parse_mode: 'Markdown' }
+        `Status: ${state.rule.paused ? '⏸ Paused' : '▶️ Active'}`
       );
     });
 
     this.bot.command('help', async (ctx) => {
       await ctx.reply(
-        '🦉 *Noctua Commands*\n\n' +
+        '🐕 Watchdog Commands\n\n' +
         '/status - Current position & Health Factor\n' +
         '/history - Recent unwind operations\n' +
         '/rule - View protection rule\n' +
@@ -148,8 +147,7 @@ export class NoctuaTelegramBot {
         'You can also ask me anything in natural language, like:\n' +
         '"Is my position safe?"\n' +
         '"What happened last night?"\n' +
-        '"Set trigger to 1.4"',
-        { parse_mode: 'Markdown' }
+        '"Set trigger to 1.4"'
       );
     });
 

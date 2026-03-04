@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="icon.png" width="160" alt="Noctua" />
+  <img src="icon.png" width="160" alt="Watchdog" />
 </p>
 
-<h1 align="center">Noctua — Your DeFi Guardian That Never Sleeps</h1>
+<h1 align="center">Watchdog — Your DeFi Guardian That Never Sleeps</h1>
 
-<p align="center"><em>While you dream, Noctua watches.</em></p>
+<p align="center"><em>Unlike a real watchdog — this one never sleeps.</em></p>
 
-Noctua is an autonomous AI agent built on **OpenClaw** that monitors your **NAVI Protocol** lending positions on **Sui**, uses an **LLM** (e.g. Gemini, GPT, Claude — configurable) for intelligent risk analysis, and communicates with you via **Telegram** — all running locally with your private key never leaving your device.
+Watchdog is an autonomous AI agent built on **OpenClaw** that monitors your **NAVI Protocol** lending positions on **Sui**, uses an **LLM** (e.g. Gemini, GPT, Claude — configurable) for intelligent risk analysis, and communicates with you via **Telegram** — all running locally with your private key never leaving your device.
 
 ## The Problem
 
@@ -14,7 +14,7 @@ DeFi lending positions can be liquidated during market crashes, causing up to 35
 
 ## The Solution
 
-Noctua monitors your Health Factor continuously, uses an **LLM** to analyze trends and make intelligent decisions, and executes **atomic flash loan unwinds** via a single Sui PTB when danger is detected:
+Watchdog monitors your Health Factor continuously, uses an **LLM** to analyze trends and make intelligent decisions, and executes **atomic flash loan unwinds** via a single Sui PTB when danger is detected:
 
 ```
 Flash Loan debt tokens → Repay debt → Withdraw collateral → Swap → Repay flash loan
@@ -26,7 +26,7 @@ All in one atomic transaction. If any step fails, everything reverts. No partial
 
 A user supplies **1 SUI** (~$0.89) as collateral and borrows **0.50 nUSDC** on NAVI Protocol. SUI price drops, and the Health Factor falls to **1.42** — below the configured trigger of 1.5.
 
-Noctua detects this and executes the following **in a single atomic transaction**:
+Watchdog detects this and executes the following **in a single atomic transaction**:
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -47,7 +47,7 @@ Noctua detects this and executes the following **in a single atomic transaction*
 
 TX: [`9VqeBU...`](https://suiscan.xyz/mainnet/tx/9VqeBUPdBCjwLD4LxqcP7gdDxoL4djUNxFZKz7k2MLQe) | Audit: [Walrus](https://aggregator.walrus-testnet.walrus.space/v1/blobs/ERhJKNU1lrxXdaZ5utsS1CGFfIJc92aKFnl9VQCVET8)
 
-Without Noctua, the user would need to manually monitor, prepare USDC, and execute multiple transactions — or risk a **35% liquidation penalty**.
+Without Watchdog, the user would need to manually monitor, prepare USDC, and execute multiple transactions — or risk a **35% liquidation penalty**.
 
 ## Architecture
 
@@ -56,7 +56,7 @@ Without Noctua, the user would need to manually monitor, prepare USDC, and execu
        │
        ▼
 ┌──────────────────────────────────┐
-│       NoctuaTelegramBot          │
+│         Telegram Bot             │
 │  /status /history /rule          │
 │  Natural language → LLM          │
 │  Push alerts ← Monitor          │
@@ -72,7 +72,7 @@ Without Noctua, the user would need to manually monitor, prepare USDC, and execu
            │ tools
            ▼
 ┌──────────────────────────────────┐
-│        Noctua Core               │
+│        Watchdog Core             │
 │  NaviClient (position query)     │
 │  UnwindEngine (strategy calc)    │
 │  FlashloanUnwind (atomic PTB)    │
@@ -88,7 +88,7 @@ Without Noctua, the user would need to manually monitor, prepare USDC, and execu
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/your-repo/noctua.git
+git clone https://github.com/cl-fi/noctua.git
 cd noctua
 npm install
 
@@ -129,19 +129,19 @@ node dist/cli.js start --trigger 1.5 --target 2.0
 
 | Command | Description |
 |---------|-------------|
-| `noctua start` | Start daemon with auto-calibrated HF thresholds |
-| `noctua start --trigger 1.5 --target 2.0` | Start with manual HF thresholds |
-| `noctua stop` | Stop daemon |
-| `noctua status` | Current HF, position, monitoring state |
-| `noctua history` | Recent unwinds with Walrus audit trails |
-| `noctua trace <blobId>` | Read full Walrus audit trace |
-| `noctua set-rule --trigger 1.4` | Update protection rules |
+| `watchdog start` | Start daemon with auto-calibrated HF thresholds |
+| `watchdog start --trigger 1.5 --target 2.0` | Start with manual HF thresholds |
+| `watchdog stop` | Stop daemon |
+| `watchdog status` | Current HF, position, monitoring state |
+| `watchdog history` | Recent unwinds with Walrus audit trails |
+| `watchdog trace <blobId>` | Read full Walrus audit trace |
+| `watchdog set-rule --trigger 1.4` | Update protection rules |
 
 ## LLM Brain (Pluggable)
 
-Unlike simple threshold-based bots, Noctua uses an **LLM** for intelligent decision-making. The default implementation uses Gemini 3 Flash, but the LLM layer is designed to be swapped for any provider (GPT, Claude, Llama, etc.):
+Unlike simple threshold-based bots, Watchdog uses an **LLM** for intelligent decision-making. The default implementation uses Gemini 3 Flash, but the LLM layer is designed to be swapped for any provider (GPT, Claude, Llama, etc.):
 
-- **Auto-Calibration**: On startup, fetches SUI price volatility (72h Binance K-lines) and uses LLM to recommend optimal trigger/target HF — no manual tuning needed
+- **Auto-Calibration**: On startup, fetches SUI price volatility (72h CoinGecko data) and uses LLM to recommend optimal trigger/target HF — no manual tuning needed
 - **24h Recalibration**: Automatically re-evaluates thresholds every 24 hours as market conditions change
 - **Trend Analysis**: Tracks HF history (last 20 checks / ~5 min) to detect rapid declines
 - **Smart Warnings**: Warns when HF is dropping fast, even if still above trigger
