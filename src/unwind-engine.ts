@@ -77,18 +77,18 @@ export class UnwindEngine {
 
     if (denominator === 0) {
       // Edge case: exactly balanced, repay all
-      console.log(`🦉 Edge case: repaying all debt`);
+      console.log(`🐕 Edge case: repaying all debt`);
       debtRepayUsd = snapshot.totalDebtUsd * 0.98;
     } else if (rawRepay > 0 && rawRepay <= snapshot.totalDebtUsd) {
       // Normal case: partial repay is sufficient (works for both +/+ and -/- signs)
       debtRepayUsd = rawRepay;
     } else if (rawRepay > snapshot.totalDebtUsd) {
       // Need more than total debt — cap at 98% full repay
-      console.log(`🦉 Partial unwind insufficient, executing full debt repayment`);
+      console.log(`🐕 Partial unwind insufficient, executing full debt repayment`);
       debtRepayUsd = snapshot.totalDebtUsd * 0.98;
     } else {
       // Negative result means position is already above target
-      console.log(`🦉 Position already safe, no repayment needed`);
+      console.log(`🐕 Position already safe, no repayment needed`);
       debtRepayUsd = 0;
     }
 
@@ -120,7 +120,7 @@ export class UnwindEngine {
       throw new Error(`Pool config not found for ${debtSymbol} or ${collateralSymbol}`);
     }
 
-    console.log(`🦉 Executing atomic unwind: repay ${debtToRepay.toFixed(4)} ${debtSymbol}, withdraw ${collateralToWithdraw.toFixed(4)} ${collateralSymbol}`);
+    console.log(`🐕 Executing atomic unwind: repay ${debtToRepay.toFixed(4)} ${debtSymbol}, withdraw ${collateralToWithdraw.toFixed(4)} ${collateralSymbol}`);
 
     const result = await atomicFlashloanUnwind({
       client: this.naviClient.client,

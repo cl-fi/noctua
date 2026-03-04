@@ -125,8 +125,7 @@ export class NoctuaDaemon {
     // Step 3: Calibrate HF thresholds
     if (this.autoCalibrate) {
       console.log(`[3/4] Auto-calibrating HF thresholds via LLM...`);
-      await this.recalibrate();
-      console.log(`[3/4] Calibration done ✅\n`);
+      await this.recalibrate(position);
     } else {
       console.log(`[3/4] Using manual HF thresholds (trigger=${this.state.rule.triggerHF}, target=${this.state.rule.targetHF}) ✅\n`);
     }
@@ -166,20 +165,19 @@ export class NoctuaDaemon {
    * Recalibrate trigger/target HF based on current market volatility + LLM reasoning.
    * Called at startup (if auto) and every 24h.
    */
-  private async recalibrate() {
-    console.log(`🔄 Auto-calibrating HF thresholds...`);
+  private async recalibrate(cachedPosition?: any) {
     try {
       const [volatility, position] = await Promise.all([
         getSuiVolatility(),
-        this.naviClient.getPosition(),
+        cachedPosition ? Promise.resolve(cachedPosition) : this.naviClient.getPosition(),
       ]);
 
       if (!volatility) {
-        console.warn(`[Calibrate] No volatility data, using defaults`);
         if (this.state.rule.triggerHF === 0) {
           this.state.rule.triggerHF = 1.5;
           this.state.rule.targetHF = 2.0;
         }
+        console.log(`[3/4] No volatility data available, using defaults (trigger=1.5, target=2.0) ⚠️\n`);
         return;
       }
 
@@ -190,6 +188,9 @@ export class NoctuaDaemon {
       this.state.rule.targetHF = result.targetHF;
       this.saveState();
 
+      console.log(`[3/4] Calibration done — trigger=${result.triggerHF}, target=${result.targetHF} ✅`);
+      console.log(`   Reason: ${result.reasoning}\n`);
+
       const msg = [
         `🔄 *HF Thresholds Auto-Calibrated*`,
         ``,
@@ -199,17 +200,13 @@ export class NoctuaDaemon {
         `💭 _${result.reasoning}_`,
       ].join('\n');
 
-      console.log(`✅ Calibrated: trigger=${result.triggerHF}, target=${result.targetHF}`);
-      console.log(`   Reason: ${result.reasoning}`);
       await this.telegramBot.broadcast(msg).catch(() => {});
     } catch (err: any) {
-      console.error(`[Calibrate] Failed: ${err.message}`);
-      // Ensure we have valid values
       if (this.state.rule.triggerHF === 0) {
         this.state.rule.triggerHF = 1.5;
         this.state.rule.targetHF = 2.0;
-        console.log(`[Calibrate] Fallback to defaults: trigger=1.5, target=2.0`);
       }
+      console.log(`[3/4] Calibration failed (${err.message}), using defaults (trigger=${this.state.rule.triggerHF}, target=${this.state.rule.targetHF}) ⚠️\n`);
     }
   }
 
