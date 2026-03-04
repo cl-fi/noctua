@@ -215,7 +215,11 @@ export class NoctuaDaemon {
     this.isProcessing = true;
 
     try {
-      const snapshot = cachedSnapshot ?? await this.naviClient.getPosition();
+      const snapshot = cachedSnapshot ?? await this.naviClient.getPosition().catch((err: any) => {
+        console.warn(`[Check] Position fetch failed, skipping cycle: ${err.message}`);
+        return null;
+      });
+      if (!snapshot) return;
       const hf = snapshot.healthFactor;
       this.state.lastHF = hf;
       this.state.lastCheck = Date.now();

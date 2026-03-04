@@ -17,17 +17,17 @@ for (const [key, poolConfig] of Object.entries(pool)) {
   }
 }
 
-async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 3000, label = 'request'): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, retries = 4, delayMs = 5000, label = 'request'): Promise<T> {
   for (let i = 0; i <= retries; i++) {
     try {
       return await fn();
     } catch (err: any) {
-      if (i === retries) throw err;
-      console.log(`[Retry] ${label} failed (${err?.message ?? 'unknown error'}), retrying in ${delayMs / 1000}s... (attempt ${i + 2}/${retries + 1})`);
-      await new Promise(r => setTimeout(r, delayMs));
+      const wait = delayMs * (i + 1); // progressive back-off: 5s, 10s, 15s, 20s
+      console.log(`[Retry] ${label} failed (${err?.message ?? 'unknown error'}), retrying in ${wait / 1000}s... (attempt ${i + 2}/${retries + 1})`);
+      await new Promise(r => setTimeout(r, wait));
     }
   }
-  throw new Error('unreachable');
+  throw new Error(`${label} failed after ${retries + 1} attempts`);
 }
 
 // Price cache — getPoolsInfo data rarely changes, avoid hammering the API
