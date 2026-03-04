@@ -246,7 +246,7 @@ export class NoctuaDaemon {
             `HF: ${trace.triggerHF.toFixed(2)} → ${trace.restoredHF.toFixed(2)}`,
             `Sold: ${trace.collateralSold.amount} ${trace.collateralSold.symbol}`,
             `Repaid: ${trace.debtRepaid.amount} ${trace.debtRepaid.symbol}`,
-            `TX: \`${trace.txDigest}\``,
+            `TX: [${trace.txDigest.slice(0, 16)}...](https://suivision.xyz/txblock/${trace.txDigest})`,
             trace.walrusBlobId ? `📜 [Walrus Audit](${WALRUS_AGGREGATOR_BASE}/${trace.walrusBlobId})` : '',
           ].filter(Boolean).join('\n');
 
