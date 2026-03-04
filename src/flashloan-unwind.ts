@@ -119,8 +119,9 @@ export async function atomicFlashloanUnwind(params: FlashloanUnwindParams): Prom
     const [withdrawnCoin] = await withdrawCoin(tx, collateralPool, withdrawAmount);
 
     // Step 5: Swap collateral → debt token via NAVI aggregator
-    // Add 0.5% buffer for flash loan fee (0.06% current + slippage)
-    const flashloanRepayAmount = Math.ceil(flashloanAmount * 1.005);
+    // minAmountOut = just enough to repay the flash loan (fee ~0.06%), excess returns to user
+    // Collateral withdrawn already includes 2% buffer for DEX fees + slippage (see unwind-engine)
+    const flashloanRepayAmount = Math.ceil(flashloanAmount * 1.001);
     const swappedCoin = await swapPTB(
       userAddress,
       tx,

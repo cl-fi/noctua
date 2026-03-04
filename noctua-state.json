@@ -2,13 +2,15 @@
   "running": false,
   "rule": {
     "triggerHF": 1.45,
-    "targetHF": 2,
+    "targetHF": 1.95,
     "strategy": "collateral_swap",
     "paused": false
   },
-  "lastCheck": 0,
-  "lastHF": 0,
-  "hfHistory": [],
+  "lastCheck": 1772594531151,
+  "lastHF": 1.1333566471475833,
+  "hfHistory": [
+    1.1333566471475833
+  ],
   "recentTraces": [
     {
       "triggerHF": 1.4240043411862828,

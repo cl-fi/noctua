@@ -68,7 +68,7 @@ export class UnwindEngine {
     // X * (fee * avgLTV - targetHF) = totalCollateral * avgLTV - targetHF * totalDebt
     // X = (totalCollateral * avgLTV - targetHF * totalDebt) / (fee * avgLTV - targetHF)
 
-    const fee = 1.005;
+    const fee = 1.02; // 2% buffer: flash loan fee (0.06%) + DEX swap fee (~0.3%) + slippage
     const numerator = snapshot.totalCollateralUsd * avgLTV - targetHF * snapshot.totalDebtUsd;
     const denominator = fee * avgLTV - targetHF;
 
