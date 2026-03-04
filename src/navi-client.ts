@@ -17,13 +17,13 @@ for (const [key, poolConfig] of Object.entries(pool)) {
   }
 }
 
-async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 3000): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 3000, label = 'request'): Promise<T> {
   for (let i = 0; i <= retries; i++) {
     try {
       return await fn();
-    } catch (err) {
+    } catch (err: any) {
       if (i === retries) throw err;
-      console.log(`[Retry] attempt ${i + 1} failed, retrying in ${delayMs / 1000}s...`);
+      console.log(`[Retry] ${label} failed (${err?.message ?? 'unknown error'}), retrying in ${delayMs / 1000}s... (attempt ${i + 2}/${retries + 1})`);
       await new Promise(r => setTimeout(r, delayMs));
     }
   }
@@ -67,8 +67,8 @@ export class NaviClient {
     // Parallel fetch: portfolio + HF + prices (if cache expired)
     const needPriceRefresh = !priceCache || (Date.now() - priceCache.ts > PRICE_CACHE_TTL);
     const [portfolio, hf] = await Promise.all([
-      withRetry(() => this.account.getNAVIPortfolio(addr, false)),
-      withRetry(() => this.account.getHealthFactor(addr)),
+      withRetry(() => this.account.getNAVIPortfolio(addr, false), 2, 3000, 'NAVI portfolio fetch'),
+      withRetry(() => this.account.getHealthFactor(addr), 2, 3000, 'NAVI health factor fetch'),
     ]);
 
     // Use cached prices or fetch fresh

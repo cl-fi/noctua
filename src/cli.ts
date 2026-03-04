@@ -205,7 +205,7 @@ program
       if (opts.pause) state.rule.paused = true;
       if (opts.resume) state.rule.paused = false;
       fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
-      console.log(chalk.green('🦉 Rule updated:'));
+      console.log(chalk.green('🐕 Rule updated:'));
       console.log(`  Trigger: ${state.rule.triggerHF}`);
       console.log(`  Target: ${state.rule.targetHF}`);
       console.log(`  Strategy: ${state.rule.strategy}`);

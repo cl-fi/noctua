@@ -6,12 +6,9 @@
     "strategy": "collateral_swap",
     "paused": false
   },
-  "lastCheck": 1772587003561,
-  "lastHF": 2.028246825428307,
-  "hfHistory": [
-    2.0284653547936635,
-    2.028246825428307
-  ],
+  "lastCheck": 0,
+  "lastHF": 0,
+  "hfHistory": [],
   "recentTraces": [
     {
       "triggerHF": 1.4240043411862828,

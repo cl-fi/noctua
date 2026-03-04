@@ -107,39 +107,50 @@ export class NoctuaDaemon {
   }
 
   async start() {
-    console.log(`🐕 Watchdog starting...`);
-    console.log(`   Address: ${this.naviClient.address}`);
+    console.log(`\n🐕 Watchdog starting...`);
+    console.log(`   Wallet: ${this.naviClient.address}\n`);
 
     this.state.running = true;
 
-    // Start Telegram bot
+    // Step 1: Connect Telegram bot
+    console.log(`[1/4] Connecting Telegram bot...`);
     await this.telegramBot.start();
+    console.log(`[1/4] Telegram bot connected ✅\n`);
 
-    // Auto-calibrate HF thresholds if not manually set
+    // Step 2: Fetch current position
+    console.log(`[2/4] Fetching current NAVI position...`);
+    const position = await this.naviClient.getPosition();
+    console.log(`[2/4] Position loaded — HF: ${position.healthFactor.toFixed(4)}, Collateral: $${position.totalCollateralUsd.toFixed(2)}, Debt: $${position.totalDebtUsd.toFixed(2)} ✅\n`);
+
+    // Step 3: Calibrate HF thresholds
     if (this.autoCalibrate) {
+      console.log(`[3/4] Auto-calibrating HF thresholds via LLM...`);
       await this.recalibrate();
+      console.log(`[3/4] Calibration done ✅\n`);
+    } else {
+      console.log(`[3/4] Using manual HF thresholds (trigger=${this.state.rule.triggerHF}, target=${this.state.rule.targetHF}) ✅\n`);
     }
 
-    console.log(`   Trigger HF: ${this.state.rule.triggerHF}`);
-    console.log(`   Target HF: ${this.state.rule.targetHF}`);
-    console.log(`   Strategy: ${this.state.rule.strategy}`);
-    console.log(`   Poll interval: ${POLL_INTERVAL_MS / 1000}s`);
-    console.log(`   Auto-calibrate: ${this.autoCalibrate ? 'every 24h' : 'off (manual)'}`);
+    // Step 4: Start monitoring loop
+    console.log(`[4/4] Starting monitoring loop...`);
+    console.log(`   Trigger HF : ${this.state.rule.triggerHF}`);
+    console.log(`   Target HF  : ${this.state.rule.targetHF}`);
+    console.log(`   Strategy   : ${this.state.rule.strategy}`);
+    console.log(`   Poll every : ${POLL_INTERVAL_MS / 1000}s`);
+    console.log(`   Recalibrate: ${this.autoCalibrate ? 'every 24h' : 'off (manual)'}`);
 
     this.saveState();
 
-    // Run first check immediately
-    await this.check();
-
-    // Start polling
     this.interval = setInterval(() => this.check(), POLL_INTERVAL_MS);
 
-    // Start 24h recalibration if auto-calibrate is on
     if (this.autoCalibrate) {
       this.calibrationInterval = setInterval(() => this.recalibrate(), CALIBRATION_INTERVAL_MS);
     }
 
-    console.log(`🐕 Monitoring active. Watchdog never sleeps.`);
+    // Run first check immediately
+    await this.check();
+
+    console.log(`\n🐕 Monitoring active. Watchdog never sleeps.\n`);
   }
 
   stop() {
@@ -234,7 +245,7 @@ export class NoctuaDaemon {
           this.state.recentTraces.push(trace);
 
           const msg = [
-            `🦉 *Crisis Averted!*`,
+            `🐕 *Crisis Averted!*`,
             ``,
             `HF: ${trace.triggerHF.toFixed(2)} → ${trace.restoredHF.toFixed(2)}`,
             `Sold: ${trace.collateralSold.amount} ${trace.collateralSold.symbol}`,
@@ -275,7 +286,7 @@ export class NoctuaDaemon {
   updateRule(rule: Partial<ProtectionRule>) {
     Object.assign(this.state.rule, rule);
     this.saveState();
-    console.log(`🦉 Rule updated: trigger=${this.state.rule.triggerHF}, target=${this.state.rule.targetHF}, strategy=${this.state.rule.strategy}`);
+    console.log(`🐕 Rule updated: trigger=${this.state.rule.triggerHF}, target=${this.state.rule.targetHF}, strategy=${this.state.rule.strategy}`);
   }
 }
 
