@@ -1,5 +1,6 @@
 import { NAVISDKClient, AccountManager, pool, Sui, USDT, WETH, CETUS, vSui, haSui, NAVX, WBTC, AUSD, wUSDC, nUSDC, ETH, USDY, NS, DEEP, FDUSD, BLUE, BUCK, suiUSDT, stSUI } from 'navi-sdk';
 import { getPoolsInfo, fetchCoinPrices } from 'navi-sdk';
+import { getAddressPortfolio } from 'navi-sdk/dist/libs/CallFunctions/index.js';
 import type { CoinInfo, PoolConfig, PoolData } from 'navi-sdk';
 import type { NoctuaConfig, PositionSnapshot, AssetPosition } from './types.js';
 
@@ -38,6 +39,12 @@ const PRICE_CACHE_TTL = 15 * 60 * 1000; // 15 minutes — oracle prices don't ch
 let positionCache: { data: PositionSnapshot; ts: number } | null = null;
 const POSITION_CACHE_TTL = 30 * 1000; // 30 seconds
 
+// Active token filter — discovered on first fetch, reduces 102 RPC calls → ~6
+// Reset after unwind or every hour so new positions are re-discovered
+let activeTokenFilter: string[] | null = null;
+let tokenFilterTs = 0;
+const TOKEN_FILTER_TTL = 60 * 60 * 1000; // 1 hour
+
 export class NaviClient {
   private sdk: NAVISDKClient;
   private account: AccountManager;
@@ -73,11 +80,26 @@ export class NaviClient {
       return positionCache.data;
     }
 
-    // Fetch portfolio (single call — HF computed locally from LTV data)
+    // Expire token filter every hour so new positions are re-discovered
+    if (activeTokenFilter && (Date.now() - tokenFilterTs > TOKEN_FILTER_TTL)) {
+      activeTokenFilter = null;
+    }
+
+    // Fetch portfolio — use token filter if known (reduces 102 RPC calls → ~6)
+    // First call is unfiltered (full discovery), subsequent calls use cached filter
     const portfolio = await withRetry(
-      () => this.account.getNAVIPortfolio(addr, false),
+      () => getAddressPortfolio(addr, false, this.account.client, undefined, activeTokenFilter as any ?? undefined),
       4, 5000, 'NAVI portfolio fetch'
     );
+
+    // Update active token filter from non-zero balances
+    const tokensWithBalance = [...portfolio.entries()]
+      .filter(([, b]) => b.borrowBalance > 0 || b.supplyBalance > 0)
+      .map(([sym]) => sym);
+    if (tokensWithBalance.length > 0) {
+      activeTokenFilter = tokensWithBalance;
+      tokenFilterTs = Date.now();
+    }
 
     // Use cached pool data or fetch fresh (prices + liquidationThreshold for HF calc)
     const needPriceRefresh = !priceCache || (Date.now() - priceCache.ts > PRICE_CACHE_TTL);
@@ -184,6 +206,12 @@ export class NaviClient {
     if (!address) positionCache = { data: snapshot, ts: Date.now() };
 
     return snapshot;
+  }
+
+  // Call after an unwind so the next fetch re-discovers position state
+  resetPositionCache() {
+    positionCache = null;
+    activeTokenFilter = null;
   }
 
   getPoolConfig(symbol: string): PoolConfig | undefined {

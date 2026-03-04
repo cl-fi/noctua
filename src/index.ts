@@ -243,6 +243,7 @@ export class NoctuaDaemon {
         try {
           const trace = await this.unwindEngine.execute(snapshot, this.state.rule);
           this.state.recentTraces.push(trace);
+          this.naviClient.resetPositionCache(); // re-discover position after unwind
 
           const msg = [
             `🐕 *Crisis Averted!*`,
