@@ -197,9 +197,7 @@ export class NoctuaTelegramBot {
   }
 
   async start() {
-    this.bot.start({
-      onStart: () => console.log('🐕 Telegram bot ready'),
-    });
+    this.bot.start({});
   }
 
   stop() {

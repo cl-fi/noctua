@@ -1,7 +1,7 @@
 {
-  "running": true,
+  "running": false,
   "rule": {
-    "triggerHF": 1.5,
+    "triggerHF": 1.45,
     "targetHF": 2,
     "strategy": "collateral_swap",
     "paused": false

@@ -196,7 +196,6 @@ Position Data:
       });
 
       const text = response.text?.trim() || '';
-      console.log(`[Calibrate raw] ${text.slice(0, 300)}`);
 
       const jsonMatch = text.match(/\{[\s\S]*?"triggerHF"[\s\S]*?\}/);
       if (!jsonMatch) throw new Error('No valid JSON in calibration response');
